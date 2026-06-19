@@ -8,6 +8,13 @@ let refreshInterval = null;
 document.addEventListener("DOMContentLoaded", () => {
   loadReminders();
   refreshInterval = setInterval(loadReminders, 5000);
+  // Tab click handlers
+  document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", function() {
+      const t = this.getAttribute("data-tab") || "local";
+      switchTab(t);
+    });
+  });
 });
 
 // ========== API ==========
@@ -245,4 +252,120 @@ function showToast(message, type = "info") {
     toast.style.transition = "opacity 0.3s";
     setTimeout(() => toast.remove(), 300);
   }, 3000);
+}
+
+// ====== Board Reminders ======
+const BOARD_API = "/api/board-reminders";
+let boardReminders = [];
+let boardOnline = false;
+
+function switchTab(tab) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  if (tab === "local") {
+    document.querySelector(".tab:first-child").classList.add("active");
+    document.querySelector(".main").style.display = "block";
+    document.getElementById("boardContent").style.display = "none";
+  } else {
+    document.querySelector(".tab:last-child").classList.add("active");
+    document.querySelector(".main").style.display = "none";
+    document.getElementById("boardContent").style.display = "block";
+    loadBoardStatus();
+    loadBoardReminders();
+  }
+}
+
+async function loadBoardStatus() {
+  try {
+    const resp = await fetch(BOARD_API + "/status");
+    const data = await resp.json();
+    boardOnline = data.online || false;
+    updateBoardStatusUI(data);
+  } catch (e) {
+    boardOnline = false;
+    document.getElementById("boardStatusText").textContent = "\u79bb\u7ebf";
+    document.getElementById("boardStatusDot").className = "board-status-dot off";
+    document.getElementById("boardReminderCount").textContent = "";
+  }
+}
+
+function updateBoardStatusUI(data) {
+  const dot = document.getElementById("boardStatusDot");
+  const text = document.getElementById("boardStatusText");
+  const count = document.getElementById("boardReminderCount");
+  if (data.online) {
+    dot.className = "board-status-dot on";
+    text.textContent = "\u5728\u7ebf (" + data.host + ")";
+    count.textContent = "\u5df2\u6536\u5230 " + (data.reminder_count || 0) + " \u6761\u63d0\u9192";
+  } else {
+    dot.className = "board-status-dot off";
+    text.textContent = "\u79bb\u7ebf";
+    count.textContent = "";
+  }
+}
+
+async function loadBoardReminders() {
+  try {
+    const resp = await fetch(BOARD_API);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    boardReminders = await resp.json();
+    renderBoardReminders();
+  } catch (e) {
+    console.error("Board load error:", e);
+  }
+}
+
+function renderBoardReminders() {
+  const grid = document.getElementById("boardReminderGrid");
+  if (!boardReminders || boardReminders.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><div class="big-icon">\U0001f5a5\ufe0f</div><h2>\u677f\u5b50\u63d0\u9192</h2><p>\u677f\u5b50\u4e0a\u66ab\u65e0\u63d0\u9192\u4e8b\u9879</p></div>';
+    return;
+  }
+  let html = "";
+  for (const r of boardReminders) {
+    const cid = r.command_id || r.id || "";
+    const title = r.title || r.content || "";
+    const time = r.reminder_time ? new Date(r.reminder_time).toLocaleString("zh-CN") : "-";
+    const recv = r.received_at ? new Date(r.received_at).toLocaleString("zh-CN") : "-";
+    const fpath = r.file_path || "";
+    const status = r.status || "received";
+    html += '<div class="reminder-card">';
+    html += '<div class="time-block"><div class="time">' + (time.split(" ")[1] || time) + '</div><div class="date">' + (time.split(" ")[0] || "") + '</div></div>';
+    html += '<div class="content"><div class="title">' + escapeHtml(title) + '</div>';
+    html += '<div class="desc">\u6536\u5230\u65f6\u95f4: ' + recv + '</div>';
+    html += '<div class="desc file-path">\u6587\u4ef6\u4f4d\u7f6e: ' + escapeHtml(fpath || "\u672a\u77e5") + '</div></div>';
+    html += '<span class="status-badge received">\u2714 \u5df2\u63a5\u6536</span>';
+    html += '<div class="actions">';
+    html += '<button class="btn-icon play-btn" onclick="playBoardReminder(\x27' + cid + '\x27)" title="\u8bd5\u542c">\U0001f50a</button>';
+    html += '<button class="btn-icon delete-btn" onclick="deleteBoardReminder(\x27' + cid + '\x27)" title="\u5220\u9664">\U0001f5d1\ufe0f</button>';
+    html += '</div></div>';
+  }
+  grid.innerHTML = html;
+}
+
+async function playBoardReminder(cmdId) {
+  if (!cmdId) return;
+  try {
+    document.getElementById("nowPlaying").classList.add("active");
+    const resp = await fetch(BOARD_API + "/" + cmdId + "/play", { method: "POST" });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      alert("\u64ad\u653e\u5931\u8d25: " + (err.detail || ""));
+    }
+    setTimeout(function() { document.getElementById("nowPlaying").classList.remove("active"); }, 5000);
+  } catch (e) {
+    alert("\u64ad\u653e\u5931\u8d25: " + e.message);
+    document.getElementById("nowPlaying").classList.remove("active");
+  }
+}
+
+async function deleteBoardReminder(cmdId) {
+  if (!cmdId || !confirm("\u786e\u5b9a\u8981\u5220\u9664\u8fd9\u4e2a\u63d0\u9192\u5417\uff1f")) return;
+  try {
+    const resp = await fetch(BOARD_API + "/" + cmdId, { method: "DELETE" });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    await loadBoardReminders();
+    await loadBoardStatus();
+  } catch (e) {
+    alert("\u5220\u9664\u5931\u8d25: " + e.message);
+  }
 }

@@ -473,3 +473,85 @@ body {
     padding: 20px;
   }
 }
+/* Tab bar */
+.tab-bar {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 16px;
+  display: flex;
+  gap: 0;
+  background: transparent;
+  margin-top: -12px;
+  margin-bottom: 12px;
+}
+.tab {
+  padding: 10px 24px;
+  border: none;
+  background: rgba(255,255,255,0.6);
+  color: var(--text-light);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px 8px 0 0;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  border-bottom: none;
+}
+.tab:hover {
+  background: rgba(255,255,255,0.9);
+  color: var(--text);
+}
+.tab.active {
+  background: var(--bg);
+  color: var(--primary-dark);
+  border-color: var(--border);
+  position: relative;
+  box-shadow: 0 -2px 8px rgba(255,107,107,0.1);
+}
+
+/* Board status bar */
+.board-status-bar {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  border: 1px solid var(--border);
+}
+.board-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.board-status-dot.on {
+  background: #00b894;
+  box-shadow: 0 0 6px rgba(0,184,148,0.5);
+}
+.board-status-dot.off {
+  background: #d63031;
+}
+.board-reminder-count {
+  margin-left: auto;
+  color: var(--text-light);
+  font-size: 12px;
+}
+
+/* Board file path */
+.file-path {
+  font-size: 11px !important;
+  color: #6c5ce7 !important;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+/* Board status badge */
+.status-badge.received {
+  background: #dfe6e9;
+  color: #636e72;
+}

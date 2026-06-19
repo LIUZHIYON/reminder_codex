@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 
 from database import init_db
 from routes.reminders import router as reminders_router
+from routes.board import router as board_router
 from services.scheduler import start_scheduler, stop_scheduler
 import config
 
@@ -40,17 +41,8 @@ app.add_middleware(
 
 # API routes
 app.include_router(reminders_router)
+app.include_router(board_router)
 
-# ── 板子提醒同步 API ──
-@app.get("/api/board-reminders")
-async def board_reminders():
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get("http://127.0.0.1:8001/api/reminders")
-            return r.json()
-    except Exception as e:
-        return {"error": str(e), "reminders": []}
 
 # Global exception handler
 @app.exception_handler(Exception)

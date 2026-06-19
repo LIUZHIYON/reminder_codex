@@ -17,6 +17,11 @@
       </div>
     </div>
   </header>
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab active" data-tab="local">本地提醒</button>
+    <button class="tab" data-tab="board">板子提醒</button>
+  </div>
 
   <!-- Now Playing Banner -->
   <div class="now-playing" id="nowPlaying">
@@ -30,6 +35,21 @@
         <div class="big-icon">🔔</div>
         <h2>还没有提醒</h2>
         <p>点击右上角的「新增提醒」来创建你的第一个提醒吧！</p>
+      </div>
+    </div>
+  </main>
+  <!-- Board Content -->
+  <main class="main" id="boardContent" style="display:none;">
+    <div class="board-status-bar" id="boardStatusBar">
+      <span class="board-status-dot" id="boardStatusDot"></span>
+      <span id="boardStatusText">检测中...</span>
+      <span class="board-reminder-count" id="boardReminderCount"></span>
+    </div>
+    <div class="reminder-grid" id="boardReminderGrid">
+      <div class="empty-state" id="boardEmptyState">
+        <div class="big-icon">🖥️</div>
+        <h2>板子提醒</h2>
+        <p>板子上暂无提醒事项</p>
       </div>
     </div>
   </main>

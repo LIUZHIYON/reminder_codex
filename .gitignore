@@ -30,3 +30,6 @@ Thumbs.db
 .env
 venv/
 .venv/
+
+_fix_*.py
+board_reminders.json

@@ -104,6 +104,21 @@ def on_msg(msg):
                 fp = os.path.join(os.path.dirname(__file__), "reminders.json")
                 with open(fp, "w", encoding="utf-8") as f: json.dump(state["reminders"], f, ensure_ascii=False)
             except: pass
+            # Push to port 8000 board reminder sync
+            try:
+                import requests as _rq
+                _rq.post("http://127.0.0.1:8000/api/board-reminders/sync", json={
+                    "command_id": cid,
+                    "title": rec["title"],
+                    "content": rec.get("content", ""),
+                    "reminder_time": rec["reminder_time"],
+                    "file_path": "/home/cat/reminder_data/audio/reminder_" + cid + ".mp3",
+                    "received_at": rec["received_at"],
+                    "status": "received"
+                }, timeout=3, proxies={"http":None,"https":None})
+                log(f"Synced to 8000: {rec['title']}")
+            except Exception as _e:
+                log(f"Sync to 8000 failed: {_e}")
             if _ws[0]:
                 _ws[0].send(json.dumps({"type":"command_response","command_id":cid,"command":cmd,"status":"success","result":{"received":True}}))
 
