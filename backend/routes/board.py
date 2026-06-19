@@ -1,4 +1,4 @@
-﻿import os, json, time
+import os, json
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -9,8 +9,9 @@ router = APIRouter(prefix="/api/board-reminders", tags=["board-reminders"])
 BOARD_HOST = "192.168.1.40"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
-BOARD_REMINDER_FILE = "/home/cat/reminder_data/reminders.json"
-BOARD_AUDIO_DIR = "/home/cat/reminder_data/audio/"
+BOARD_BASE_DIR = "/home/cat/reminder_system"
+BOARD_DB_PATH = BOARD_BASE_DIR + "/data/reminders.db"
+BOARD_AUDIO_DIR = BOARD_BASE_DIR + "/audio/"
 
 CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "board_reminders.json")
 
@@ -41,6 +42,25 @@ def _ssh_exec(cmd):
     except Exception as e:
         return None, str(e)
 
+def _ssh_exec_py(py_code):
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
+        sftp = client.open_sftp()
+        remote_path = "/tmp/_board_q.py"
+        with sftp.open(remote_path, "w") as f:
+            f.write(py_code)
+        sftp.close()
+        _, stdout, stderr = client.exec_command("python3 " + remote_path)
+        out = stdout.read().decode("utf-8", errors="replace")
+        err = stderr.read().decode("utf-8", errors="replace")
+        client.exec_command("rm -f " + remote_path)
+        client.close()
+        return out, err
+    except Exception as e:
+        return None, str(e)
+
 def _check_online():
     out, err = _ssh_exec("echo online_ok")
     return bool(out and "online_ok" in out)
@@ -56,23 +76,6 @@ def _sftp_get(remote_path, local_path):
         client.close()
         return True
     except Exception as e:
-        print(f"[Board] SFTP failed: {e}")
-        return False
-
-def _sftp_put(remote_path, data_str):
-    """Write a string to a remote file via SFTP."""
-    try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
-        sftp = client.open_sftp()
-        with sftp.open(remote_path, "w") as f:
-            f.write(data_str)
-        sftp.close()
-        client.close()
-        return True
-    except Exception as e:
-        print(f"[Board] SFTP put failed: {e}")
         return False
 
 class BoardReminderSync(BaseModel):
@@ -102,6 +105,15 @@ async def sync_board_reminder(data: BoardReminderSync):
     records.insert(0, rec)
     records = records[:100]
     _save_cache(records)
+    # Also SSH into board and insert into SQLite
+    if data.title and data.reminder_time:
+        try:
+            q = "import sqlite3; conn=sqlite3.connect(\'" + BOARD_DB_PATH + "\'); c=conn.cursor(); c.execute(\"INSERT INTO reminders (content, reminder_time, status) VALUES (?,?,?)\" , (\"" + data.content.replace('"','') + "\",\"" + data.reminder_time + "\",\"pending\")); conn.commit(); print(c.lastrowid); conn.close()"
+            out, err = _ssh_exec_py(q)
+            if out and out.strip().isdigit():
+                rec["board_db_id"] = int(out.strip())
+        except Exception as _e:
+            import traceback; traceback.print_exc()
     return {"success": True, "count": len(records)}
 
 @router.get("/status")
@@ -109,61 +121,52 @@ async def board_status():
     online = _check_online()
     info = {"online": online, "host": BOARD_HOST}
     if online:
-        out, err = _ssh_exec("cat " + BOARD_REMINDER_FILE + " 2>/dev/null || echo '[]'")
-        count = 0
+        q = 'import sqlite3; conn=sqlite3.connect("' + BOARD_DB_PATH + '"); c=conn.cursor(); c.execute("SELECT COUNT(*) FROM reminders"); print(c.fetchone()[0]); conn.close()'
+        out, err = _ssh_exec_py(q)
         if out:
             try:
-                count = len(json.loads(out))
+                info["reminder_count"] = int(out.strip())
             except:
                 pass
-        info["reminder_count"] = count
     return info
 
 @router.get("")
 async def list_board_reminders():
-    out, err = _ssh_exec("cat " + BOARD_REMINDER_FILE + " 2>/dev/null || echo '[]'")
+    q = 'import sqlite3,json; conn=sqlite3.connect("' + BOARD_DB_PATH + '"); c=conn.cursor(); c.execute("PRAGMA table_info(reminders)"); cols=[r[1] for r in c.fetchall()]; c.execute("SELECT * FROM reminders ORDER BY id DESC LIMIT 50"); rows=c.fetchall(); print(json.dumps([dict(zip(cols,row)) for row in rows],ensure_ascii=False)); conn.close()'
+    out, err = _ssh_exec_py(q)
     if out:
         try:
             data = json.loads(out)
             for item in data:
-                rid = item.get("command_id", "") or str(item.get("id", ""))
-                item["file_path"] = BOARD_AUDIO_DIR + "reminder_" + rid + ".mp3"
                 item["board_host"] = BOARD_HOST
+                item["title"] = item.get("content", "")
+                item["file_path"] = item.get("audio_file", BOARD_AUDIO_DIR)
             _save_cache(data)
             return data
         except:
             pass
     return _load_cache()
 
-@router.delete("/{command_id}")
-async def delete_board_reminder(command_id: str):
-    out, err = _ssh_exec("cat " + BOARD_REMINDER_FILE + " 2>/dev/null || echo '[]'")
-    if not out:
-        raise HTTPException(500, detail="Cannot read board reminders")
-    try:
-        recs = json.loads(out)
-    except:
-        raise HTTPException(500, detail="Invalid JSON on board")
-    before = len(recs)
-    recs = [r for r in recs if r.get("command_id", "") != command_id]
-    if len(recs) == before:
-        raise HTTPException(404, detail="Not found on board")
-    ok = _sftp_put(BOARD_REMINDER_FILE, json.dumps(recs, ensure_ascii=False, indent=2))
-    if not ok:
-        raise HTTPException(500, detail="Failed to write back to board")
+@router.delete("/{reminder_id}")
+async def delete_board_reminder(reminder_id: int):
+    q = 'import sqlite3; conn=sqlite3.connect("' + BOARD_DB_PATH + '"); c=conn.cursor(); c.execute("DELETE FROM reminders WHERE id = ?",(' + str(reminder_id) + ',)); conn.commit(); print("OK"); conn.close()'
+    out, err = _ssh_exec_py(q)
+    if not out or "OK" not in out:
+        raise HTTPException(500, detail="Board deletion failed")
     return {"success": True}
 
-@router.post("/{command_id}/play")
-async def play_board_reminder(command_id: str):
-    out, err = _ssh_exec("ls " + BOARD_AUDIO_DIR + "reminder_" + command_id + ".* 2>/dev/null")
-    audio_remote = (out or "").strip().split("\n")[0] if out else ""
+@router.post("/{reminder_id}/play")
+async def play_board_reminder(reminder_id: int):
+    q = 'import sqlite3; conn=sqlite3.connect("' + BOARD_DB_PATH + '"); c=conn.cursor(); c.execute("SELECT audio_file FROM reminders WHERE id = ?",(' + str(reminder_id) + ',)); row=c.fetchone(); print(row[0] if row and row[0] else ""); conn.close()'
+    out, err = _ssh_exec_py(q)
+    audio_remote = (out or "").strip()
     if not audio_remote:
         raise HTTPException(404, detail="Audio file not found on board")
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     project_dir = os.path.join(base_dir, "..")
     local_dir = os.path.join(project_dir, "audio")
     os.makedirs(local_dir, exist_ok=True)
-    local_path = os.path.join(local_dir, "board_" + command_id + os.path.splitext(audio_remote)[1])
+    local_path = os.path.join(local_dir, "board_" + str(reminder_id) + os.path.splitext(audio_remote)[1])
     ok = _sftp_get(audio_remote, local_path)
     if not ok:
         raise HTTPException(500, detail="Failed to download audio from board")

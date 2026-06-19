@@ -1,28 +1,17 @@
-import os
-os.environ['no_proxy'] = '47.118.26.156'
-os.environ['NO_PROXY'] = '47.118.26.156'
-os.environ['HTTP_PROXY'] = ''
-os.environ['HTTPS_PROXY'] = ''
-import sys, json, time, threading, websocket
-import requests as rq
+﻿import json, time, threading, os, sys
 import requests as _rq
-# Patch: bypass local proxy
-
-_rq_orig_get = _rq.get
-_rq_orig_post = _rq.post
-def _rq_no_proxy_get(url, **kw): kw['proxies'] = {'http':None,'https':None}; return _rq_orig_get(url, **kw)
-def _rq_no_proxy_post(url, **kw): kw['proxies'] = {'http':None,'https':None}; return _rq_orig_post(url, **kw)
-_rq.get = _rq_no_proxy_get
-_rq.post = _rq_no_proxy_post
+_rq_orig_get = _rq.get; _rq_orig_post = _rq.post
+def _rq_no_proxy_get(url, **kw): kw["proxies"] = {"http":None,"https":None}; return _rq_orig_get(url, **kw)
+def _rq_no_proxy_post(url, **kw): kw["proxies"] = {"http":None,"https":None}; return _rq_orig_post(url, **kw)
+_rq.get = _rq_no_proxy_get; _rq.post = _rq_no_proxy_post
 rq = _rq
-import sys, json, time, threading, websocket
-import requests as rq
-import os as _os; _os.environ['no_proxy'] = '47.118.26.156'  # bypass proxy for server
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import websocket
 
 API = "http://47.118.26.156:8000/api/v1"
 SERIAL = "6976f96f-bc80-56e3-9b27-13d12cdde9d3"
@@ -62,9 +51,7 @@ def ws_run():
             r = rq.get(f"{API}/aipet/ws/auth/{SERIAL}", timeout=10)
             tk = r.json().get("data","")
             if not tk:
-                log("No WS token, retry 5s")
-                time.sleep(5)
-                continue
+                time.sleep(5); continue
             url = f"ws://47.118.26.156:8000/api/v1/aipet/ws/{SERIAL}"
             _ws[0] = websocket.WebSocketApp(url,
                 on_open=lambda s: s.send(json.dumps({"type":"auth","access_token":tk})),
@@ -89,38 +76,28 @@ def on_msg(msg):
     elif t == "server_command":
         cmd = msg.get("command",""); cid = msg.get("command_id","")
         if cmd == "reminder":
-            print("[DEBUG] WS MSG:" + json.dumps(msg, ensure_ascii=False)[:300])
-            rd = msg.get("reminder_data") or {}
-            cp = msg.get("commandParams") or msg.get("command_params") or {}
-            rd = rd or cp.get("reminder_data") or cp.get("reminderData") or cp
-            if not rd.get("title"):
-                rd = {"title": msg.get("title",""), "content": msg.get("content",""), "reminder_time": msg.get("reminder_time","")}
-            rec = {"command_id":cid, "title":rd.get("title",""), "content":rd.get("content",""),
-                   "reminder_time":rd.get("reminder_time","") or rd.get("reminderTime",""), "received_at":time.strftime("%Y-%m-%dT%H:%M:%S"), "status":"received"}
-            log(f"REMINDER: {rec['title']}")
+            rd = msg.get("reminder_data") or msg.get("commandParams") or msg.get("command_params") or {}
+            title = rd.get("title","") or rd.get("content","") or msg.get("title","") or msg.get("content","")
+            content = rd.get("content","") or title
+            rtime = rd.get("reminder_time","") or rd.get("reminderTime","") or msg.get("reminder_time","")
+            rec = {"command_id":cid, "title":title, "content":content,
+                   "reminder_time":rtime, "received_at":time.strftime("%Y-%m-%dT%H:%M:%S"), "status":"received"}
+            log(f"REMINDER: {title}")
             state["reminders"].insert(0, rec)
             state["reminders"] = state["reminders"][:50]
             try:
                 fp = os.path.join(os.path.dirname(__file__), "reminders.json")
                 with open(fp, "w", encoding="utf-8") as f: json.dump(state["reminders"], f, ensure_ascii=False)
             except: pass
-            # Push to port 8000 board reminder sync
+            # Push to 8000 sync endpoint - 8000 will SSH into board
             try:
-                import requests as _rq
-                _rq.post("http://127.0.0.1:8000/api/board-reminders/sync", json={
-                    "command_id": cid,
-                    "title": rec["title"],
-                    "content": rec.get("content", ""),
-                    "reminder_time": rec["reminder_time"],
-                    "file_path": "/home/cat/reminder_data/audio/reminder_" + cid + ".mp3",
-                    "received_at": rec["received_at"],
-                    "status": "received"
+                rq.post("http://127.0.0.1:8000/api/board-reminders/sync", json={
+                    "command_id": cid, "title": title, "content": content, "reminder_time": rtime,
+                    "file_path": "", "received_at": rec["received_at"], "status": "received"
                 }, timeout=3, proxies={"http":None,"https":None})
-                log(f"Synced to 8000: {rec['title']}")
-            except Exception as _e:
-                log(f"Sync to 8000 failed: {_e}")
+            except: pass
             if _ws[0]:
-                _ws[0].send(json.dumps({"type":"command_response","command_id":cid,"command":cmd,"status":"success","result":{"received":True}}))
+                _ws[0].send(json.dumps({"type":"command_response","command_id":cid,"command":cmd,"status":"success"}))
 
 threading.Thread(target=ws_run, daemon=True).start()
 
@@ -141,15 +118,16 @@ def reminders():
 
 @app.post("/api/send-reminder")
 def send(data: dict):
-    title = data.get("title",""); rtime = data.get("reminder_time",""); content = data.get("content","")
+    title = data.get("title",""); rtime = data.get("reminder_time",""); content = data.get("content","") or title
     if not title or not rtime: raise HTTPException(400,"title+time required")
     if not refresh(): raise HTTPException(500,"Login failed")
     pid = get_pid()
     if not pid: raise HTTPException(500,"No device")
-    payload = {"sessionId":"mgmt_"+str(int(time.time())), "messageType":"command", "commandType":"reminder", "content":title, "commandParams":{"reminder_data":{"title":title, "content":content, "reminder_time":rtime, "repeat_type":data.get("repeat_type","")}}}
+    payload = {"sessionId":"mgmt_"+str(int(time.time())), "messageType":"command", "commandType":"reminder",
+               "content":title, "commandParams":{"reminder_data":{"title":title, "content":content, "reminder_time":rtime, "repeat_type":data.get("repeat_type","")}}}
     r = rq.post(f"{API}/aipet/app/chatWith/{pid}", headers={"Authorization":f"Bearer {_utoken[0]}", "Content-Type":"application/json"}, json=payload, timeout=10)
     result = r.json()
-    if result.get("success"): return JSONResponse({"success":True, "data":result.get("data",{})})
+    if result.get("success"): return JSONResponse({"success":True})
     raise HTTPException(500, result.get("msg","Failed"))
 
 @app.get("/")
@@ -157,19 +135,9 @@ def index():
     try:
         fp = os.path.join(os.path.dirname(__file__), "index.html")
         return HTMLResponse(open(fp, encoding="utf-8").read())
-    except Exception as e:
-        print(f"[ERROR] index.html: {e}")
-        return HTMLResponse("<h1>Reminder Management</h1><p>Server running. <a href=\"/api/status\">API Status</a></p>")
+    except:
+        return HTMLResponse("<h1>RM</h1>")
 
 if __name__ == "__main__":
     log(f"http://127.0.0.1:{PORT}")
     uvicorn.run(app, host="127.0.0.1", port=PORT)
-
-
-
-
-
-
-
-
-
