@@ -1,0 +1,9 @@
+﻿fastapi==0.115.0
+uvicorn[standard]==0.31.0
+sqlalchemy[asyncio]==2.0.35
+aiosqlite==0.20.0
+edge-tts==6.1.1
+pygame==2.6.0
+pydantic==2.9.0
+gtts==2.5.4
+pyttsx3==2.99
