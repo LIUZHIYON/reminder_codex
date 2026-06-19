@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>叮叮提醒 - 设备管理</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif}
+body{background:#f5f7fa;color:#333;padding:20px;max-width:800px;margin:0 auto}
+h1{color:#6c5ce7;margin-bottom:16px;font-size:22px}
+.card{background:#fff;border-radius:8px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.card h3{font-size:14px;color:#888;margin-bottom:8px}
+.on{color:#00b894;font-weight:bold}
+.off{color:#d63031;font-weight:bold}
+input,textarea{width:100%;padding:8px;margin-bottom:8px;border:1px solid #dfe6e9;border-radius:4px;font-size:13px}
+textarea{min-height:60px;resize:vertical}
+button{padding:8px 16px;background:#6c5ce7;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px}
+button:hover{background:#5f3dc4}
+button:disabled{background:#b2bec3}
+.item{padding:8px;border-bottom:1px solid #f0f0f0;font-size:13px}
+.item:last-child{border-bottom:none}
+.ttl{font-weight:600}
+.meta{color:#888;font-size:12px;margin-top:2px}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#55efc4;color:#00b894;margin-top:4px}
+.ok{color:#00b894}
+.err{color:#d63031}
+.info{font-size:13px;margin-bottom:4px}
+.code{font-family:monospace;background:#f0f0f0;padding:2px 6px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<h1>🔔 设备管理</h1>
+<div class="card">
+<h3>📋 设备信息</h3>
+<div class="info">序列号: <span class="code" id="serialDisplay"></span></div>
+<div class="info">状态: <span id="statusText" class="off">检测中...</span></div>
+<div class="info">已收提醒: <span id="reminderCount">0</span> 条</div>
+</div>
+<div class="card">
+<h3>✉️ 发送提醒到设备</h3>
+<input type="text" id="titleInput" placeholder="提醒标题（必填）">
+<textarea id="contentInput" placeholder="提醒内容（可选）"></textarea>
+<input type="datetime-local" id="timeInput">
+<button id="sendBtn" onclick="doSend()">发送提醒</button>
+<div id="result" style="margin-top:8px;font-size:13px"></div>
+</div>
+<div class="card">
+<h3>📜 设备收到的提醒</h3>
+<div id="list"><p style="text-align:center;padding:20px;color:#888;font-size:13px">加载中...</p></div>
+</div>
+<script>
+document.getElementById("serialDisplay").textContent = "6976f96f-bc80-56e3-9b27-13d12cdde9d3";
+async function refresh(){
+  try{
+    let r=await fetch("/api/status");let d=await r.json();
+    let st=document.getElementById("statusText");
+    st.textContent=d.online?"在线":"离线";
+    st.className=d.online?"on":"off";
+  }catch(e){}
+  try{
+    let r=await fetch("/api/reminders");let data=await r.json();
+    document.getElementById("reminderCount").textContent=data.length;
+    let list=document.getElementById("list");
+    if(data.length==0){list.innerHTML='<p style="text-align:center;padding:20px;color:#888;font-size:13px">暂无提醒</p>';return;}
+    list.innerHTML=data.map(function(it){
+      let t=it.reminder_time?new Date(it.reminder_time).toLocaleString("zh-CN"):"-";
+      let at=it.received_at?new Date(it.received_at).toLocaleString("zh-CN"):"-";
+      return '<div class="item"><div class="ttl">'+it.title+'</div><div class="meta">⏰ '+t+' | 收到时间: '+at+'</div><span class="tag">✅ 已接收</span></div>';
+    }).join("");
+  }catch(e){}
+}
+async function doSend(){
+  let btn=document.getElementById("sendBtn");btn.disabled=true;btn.textContent="发送中...";
+  let title=document.getElementById("titleInput").value.trim();
+  let content=document.getElementById("contentInput").value.trim();
+  let t=document.getElementById("timeInput").value;
+  let res=document.getElementById("result");
+  if(!title){res.innerHTML='<span class="err">请输入标题</span>';btn.disabled=false;btn.textContent="发送提醒";return;}
+  let rt=t?t+":00":new Date().toISOString().slice(0,19);
+  try{
+    let r=await fetch("/api/send-reminder",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({title,content,reminder_time:rt,repeat_type:""})});
+    let d=await r.json();
+    if(d.success){res.innerHTML='<span class="ok">✅ 已发送！</span>';document.getElementById("titleInput").value="";setTimeout(refresh,2000);}
+    else{res.innerHTML='<span class="err">❌ '+(d.detail||"失败")+'</span>';}
+  }catch(e){res.innerHTML='<span class="err">❌ 请求失败</span>';}
+  btn.disabled=false;btn.textContent="发送提醒";
+}
+refresh();setInterval(refresh,3000);
+</script>
+</body>
+</html>

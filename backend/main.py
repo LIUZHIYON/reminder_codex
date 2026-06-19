@@ -41,6 +41,17 @@ app.add_middleware(
 # API routes
 app.include_router(reminders_router)
 
+# ── 板子提醒同步 API ──
+@app.get("/api/board-reminders")
+async def board_reminders():
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get("http://127.0.0.1:8001/api/reminders")
+            return r.json()
+    except Exception as e:
+        return {"error": str(e), "reminders": []}
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -74,3 +85,4 @@ else:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host=config.HOST, port=config.PORT, reload=False)
+

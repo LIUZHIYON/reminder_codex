@@ -1,4 +1,23 @@
-﻿import sys, os, json, time, threading, requests as rq, websocket
+import os
+os.environ['no_proxy'] = '47.118.26.156'
+os.environ['NO_PROXY'] = '47.118.26.156'
+os.environ['HTTP_PROXY'] = ''
+os.environ['HTTPS_PROXY'] = ''
+import sys, json, time, threading, websocket
+import requests as rq
+import requests as _rq
+# Patch: bypass local proxy
+
+_rq_orig_get = _rq.get
+_rq_orig_post = _rq.post
+def _rq_no_proxy_get(url, **kw): kw['proxies'] = {'http':None,'https':None}; return _rq_orig_get(url, **kw)
+def _rq_no_proxy_post(url, **kw): kw['proxies'] = {'http':None,'https':None}; return _rq_orig_post(url, **kw)
+_rq.get = _rq_no_proxy_get
+_rq.post = _rq_no_proxy_post
+rq = _rq
+import sys, json, time, threading, websocket
+import requests as rq
+import os as _os; _os.environ['no_proxy'] = '47.118.26.156'  # bypass proxy for server
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -70,13 +89,14 @@ def on_msg(msg):
     elif t == "server_command":
         cmd = msg.get("command",""); cid = msg.get("command_id","")
         if cmd == "reminder":
+            print("[DEBUG] WS MSG:" + json.dumps(msg, ensure_ascii=False)[:300])
             rd = msg.get("reminder_data") or {}
             cp = msg.get("commandParams") or msg.get("command_params") or {}
-            rd = rd or cp.get("reminder_data") or cp
+            rd = rd or cp.get("reminder_data") or cp.get("reminderData") or cp
             if not rd.get("title"):
                 rd = {"title": msg.get("title",""), "content": msg.get("content",""), "reminder_time": msg.get("reminder_time","")}
             rec = {"command_id":cid, "title":rd.get("title",""), "content":rd.get("content",""),
-                   "reminder_time":rd.get("reminder_time",""), "received_at":time.strftime("%Y-%m-%dT%H:%M:%S"), "status":"received"}
+                   "reminder_time":rd.get("reminder_time","") or rd.get("reminderTime",""), "received_at":time.strftime("%Y-%m-%dT%H:%M:%S"), "status":"received"}
             log(f"REMINDER: {rec['title']}")
             state["reminders"].insert(0, rec)
             state["reminders"] = state["reminders"][:50]
@@ -111,18 +131,30 @@ def send(data: dict):
     if not refresh(): raise HTTPException(500,"Login failed")
     pid = get_pid()
     if not pid: raise HTTPException(500,"No device")
-    payload = {"commandParams":{"reminder_data":{"title":title, "content":content, "reminder_time":rtime, "repeat_type":data.get("repeat_type","")}}}
-    r = rq.post(f"{API}/aipet/app/command/{pid}/reminder", headers={"Authorization":f"Bearer {_utoken[0]}", "Content-Type":"application/json"}, json=payload, timeout=10)
+    payload = {"sessionId":"mgmt_"+str(int(time.time())), "messageType":"command", "commandType":"reminder", "content":title, "commandParams":{"reminder_data":{"title":title, "content":content, "reminder_time":rtime, "repeat_type":data.get("repeat_type","")}}}
+    r = rq.post(f"{API}/aipet/app/chatWith/{pid}", headers={"Authorization":f"Bearer {_utoken[0]}", "Content-Type":"application/json"}, json=payload, timeout=10)
     result = r.json()
     if result.get("success"): return JSONResponse({"success":True, "data":result.get("data",{})})
     raise HTTPException(500, result.get("msg","Failed"))
 
 @app.get("/")
 def index():
-    html = open(os.path.join(os.path.dirname(__file__), "index.html"), encoding="utf-8").read()
-    return HTMLResponse(html)
+    try:
+        fp = os.path.join(os.path.dirname(__file__), "index.html")
+        return HTMLResponse(open(fp, encoding="utf-8").read())
+    except Exception as e:
+        print(f"[ERROR] index.html: {e}")
+        return HTMLResponse("<h1>Reminder Management</h1><p>Server running. <a href=\"/api/status\">API Status</a></p>")
 
 if __name__ == "__main__":
     log(f"http://127.0.0.1:{PORT}")
     uvicorn.run(app, host="127.0.0.1", port=PORT)
+
+
+
+
+
+
+
+
 
