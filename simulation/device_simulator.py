@@ -4,7 +4,7 @@
 用法:
   python device_simulator.py
   python device_simulator.py --serial AIPET-DEMO-002
-  python device_simulator.py --server 42.121.217.40:3000
+  python device_simulator.py --server 47.118.26.156:8000
 
 连接流程:
   1. 连接 WebSocket
@@ -27,7 +27,7 @@ import subprocess
 class DeviceSimulator:
     """模拟设备节点"""
 
-    def __init__(self, serial_number="AIPET-DEMO-001", server_host="42.121.217.40",
+    def __init__(self, serial_number="AIPET-DEMO-001", server_host="47.118.26.156",
                  server_port=3000, ws_path="/openclaw-wwh/robot_websocket"):
         self.serial_number = serial_number
         self.server_host = server_host
@@ -118,7 +118,7 @@ class DeviceSimulator:
         token = self.serial_number  # fallback
         try:
             r = requests.get(
-                f"http://{self.server_host}:9099/api/v1/aipet/ws/auth/{self.serial_number}",
+                f"http://{self.server_host}:8000/api/v1/aipet/ws/auth/{self.serial_number}",
                 timeout=5
             )
             if r.ok:
@@ -272,7 +272,7 @@ class DeviceSimulator:
 def main():
     parser = argparse.ArgumentParser(description="Reminder Device Simulator")
     parser.add_argument("--serial", default="AIPET-DEMO-001", help="设备序列号")
-    parser.add_argument("--server", default="42.121.217.40:3000", help="服务器地址")
+    parser.add_argument("--server", default="47.118.26.156:8000", help="服务器地址")
     args = parser.parse_args()
 
     host, port = args.server.split(":")
@@ -286,3 +286,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

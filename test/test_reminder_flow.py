@@ -9,7 +9,7 @@
 用法:
   python test_reminder_flow.py                    # 完整测试
   python test_reminder_flow.py --skip-ws          # 仅测试 HTTP API
-  python test_reminder_flow.py --server 42.121.217.40:9099
+  python test_reminder_flow.py --server 47.118.26.156:9099
 """
 
 import json
@@ -178,7 +178,7 @@ def test_websocket(result, server_host, ws_port):
 
 def main():
     parser = argparse.ArgumentParser(description="Reminder System Integration Test")
-    parser.add_argument("--server", default="42.121.217.40", help="服务器 HTTP 地址")
+    parser.add_argument("--server", default="47.118.26.156", help="服务器 HTTP 地址")
     parser.add_argument("--http-port", type=int, default=9099, help="HTTP 端口")
     parser.add_argument("--ws-port", type=int, default=3000, help="WebSocket 端口")
     parser.add_argument("--skip-ws", action="store_true", help="跳过 WebSocket 测试")
@@ -216,3 +216,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+

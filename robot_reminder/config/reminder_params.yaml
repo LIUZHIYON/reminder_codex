@@ -2,8 +2,9 @@
 reminder_node:
   ros__parameters:
     serial_number: "AIPET-DEMO-001"
-    server_host: "42.121.217.40"
+    server_host: "47.118.26.156"
     server_port: 3000
     ws_path: "/openclaw-wwh/robot_websocket"
     audio_dir: "/data/audio"
     heartbeat_interval: 30
+

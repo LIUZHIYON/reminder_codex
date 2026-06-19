@@ -15,7 +15,7 @@ import argparse
 from datetime import datetime
 
 
-API_BASE = "http://42.121.217.40:9099/api/v1"
+API_BASE = "http://47.118.26.156:8000/api/v1"
 TOKEN = None
 AIPET_ID = None
 
@@ -136,3 +136,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

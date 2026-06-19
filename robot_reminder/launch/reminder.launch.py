@@ -8,7 +8,7 @@ from launch.substitutions import LaunchConfiguration
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("serial_number", default_value="AIPET-DEMO-001"),
-        DeclareLaunchArgument("server_host", default_value="42.121.217.40"),
+        DeclareLaunchArgument("server_host", default_value="47.118.26.156"),
         DeclareLaunchArgument("server_port", default_value="3000"),
         DeclareLaunchArgument("ws_path", default_value="/openclaw-wwh/robot_websocket"),
 
@@ -25,3 +25,4 @@ def generate_launch_description():
             }],
         ),
     ])
+

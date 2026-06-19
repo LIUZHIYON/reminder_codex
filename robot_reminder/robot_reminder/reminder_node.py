@@ -28,7 +28,7 @@ class ReminderNode(Node):
 
         # === 参数 ===
         self.declare_parameter("serial_number", "AIPET-DEMO-001")
-        self.declare_parameter("server_host", "42.121.217.40")
+        self.declare_parameter("server_host", "47.118.26.156")
         self.declare_parameter("server_port", 3000)
         self.declare_parameter("ws_path", "/openclaw-wwh/robot_websocket")
         self.declare_parameter("audio_dir", "/data/audio")
@@ -427,3 +427,4 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
+
