@@ -42,8 +42,18 @@ async def check_and_play_reminders():
             logger.info(f"Playing reminder: {item['title']}")
             print(f"[Scheduler] Playing: {item['title']} at {item['reminder_time']}")
 
+            # Re-query from DB to get the LATEST title (avoid stale data)
             audio_file = item["audio_file"]
             if not audio_file or not os.path.exists(audio_file):
+                async with async_session() as session:
+                    result = await session.execute(
+                        select(Reminder).where(Reminder.id == item["id"])
+                    )
+                    r = result.scalar_one_or_none()
+                    if r:
+                        item["title"] = r.title
+                        item["description"] = r.description or ""
+
                 audio_file = await loop.run_in_executor(
                     None, generate_audio_sync,
                     item["id"], item["title"], item["description"]
@@ -54,7 +64,9 @@ async def check_and_play_reminders():
 
             # Update DB with new session
             async with async_session() as session:
-                result = await session.execute(select(Reminder).where(Reminder.id == item["id"]))
+                result = await session.execute(
+                    select(Reminder).where(Reminder.id == item["id"])
+                )
                 r = result.scalar_one_or_none()
                 if not r:
                     continue

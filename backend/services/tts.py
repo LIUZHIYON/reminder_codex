@@ -9,7 +9,6 @@ def _get_audio_path(reminder_id):
     return os.path.join(AUDIO_DIR, f"reminder_{reminder_id}.wav")
 
 def _fix_extension(path, expected_fmt):
-    """Rename file to correct extension if needed."""
     base, ext = os.path.splitext(path)
     correct_ext = ".wav" if expected_fmt == "wav" else ".mp3"
     if ext.lower() != correct_ext:
@@ -25,29 +24,34 @@ def generate_audio_sync(reminder_id: int, title: str, description: str = "") -> 
         text += f"\u3002{description}"
     text += "\u3002\u522b\u5fd8\u4e86\u54e6\uff01"
 
-    # PowerShell → WAV
+    # Delete old file first to ensure fresh generation
+    audio_path = _get_audio_path(reminder_id)
+    if os.path.exists(audio_path):
+        try:
+            os.remove(audio_path)
+            print(f"[TTS] Removed old audio: {os.path.basename(audio_path)}")
+        except:
+            pass
+
+    # PowerShell TTS → WAV
     result = _try_powershell(text, reminder_id)
     if result:
-        result = _fix_extension(result, "wav")
-        return result
+        return _fix_extension(result, "wav")
 
     # pyttsx3 → WAV
     result = _try_pyttsx3(text, reminder_id)
     if result:
-        result = _fix_extension(result, "wav")
-        return result
+        return _fix_extension(result, "wav")
 
     # gTTS → MP3
     result = _try_gtts(text, reminder_id)
     if result:
-        result = _fix_extension(result, "mp3")
-        return result
+        return _fix_extension(result, "mp3")
 
     # edge-tts → MP3
     result = _try_edge_tts_sync(text, reminder_id)
     if result:
-        result = _fix_extension(result, "mp3")
-        return result
+        return _fix_extension(result, "mp3")
 
     print(f"[TTS] All backends failed")
     return ""
