@@ -113,8 +113,8 @@ async def sync_board_reminder(data: BoardReminderSync):
             if audio_path:
                 rec["audio_file"] = audio_path
                 _save_cache(records)
-        except:
-            pass
+        except Exception as _e:
+            print("Sync TTS error: " + str(_e))
     return {"success": True, "count": len(records)}
 
 @router.get("/status")
