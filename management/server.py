@@ -1,8 +1,8 @@
-﻿import json, time, threading, os, sys
+﻿import sys, json, time, threading, os
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
-def _rq_no_proxy_get(url, **kw): kw["proxies"] = {"http":None,"https":None}; return _rq_orig_get(url, **kw)
-def _rq_no_proxy_post(url, **kw): kw["proxies"] = {"http":None,"https":None}; return _rq_orig_post(url, **kw)
+def _rq_no_proxy_get(u, **k): k["proxies"] = {"http":None,"https":None}; return _rq_orig_get(u, **k)
+def _rq_no_proxy_post(u, **k): k["proxies"] = {"http":None,"https":None}; return _rq_orig_post(u, **k)
 _rq.get = _rq_no_proxy_get; _rq.post = _rq_no_proxy_post
 rq = _rq
 
@@ -10,15 +10,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import websocket
+import uvicorn, websocket
 
 API = "http://47.118.26.156:8000/api/v1"
 SERIAL = "6976f96f-bc80-56e3-9b27-13d12cdde9d3"
 PORT = 8001
 
-state = {"online":False, "last_seen":"", "reminders":[]}
-_ws = [None]; _utoken = [""]
+_utoken = [""]; _ws = [None]
 
 def log(m): print(f"[{time.strftime('%H:%M:%S')}] {m}")
 
@@ -26,14 +24,9 @@ def refresh():
     try:
         r = rq.get(f"{API}/aipet/app/auth/13800138000/888888", timeout=10)
         d = r.json()
-        if d.get("success"):
-            _utoken[0] = d.get("data","")
-            return True
-        log(f"Auth fail: {d.get('msg','')}")
-    except Exception as e:
-        log(f"Auth error: {e}")
-    _utoken[0] = ""
-    return False
+        if d.get("success"): _utoken[0] = d.get("data",""); return True
+    except Exception as e: log(f"Auth error: {e}")
+    _utoken[0] = ""; return False
 
 def get_pid():
     refresh()
@@ -42,16 +35,14 @@ def get_pid():
         r = rq.get(f"{API}/aipet/app/myaipets", headers={"Authorization":f"Bearer {_utoken[0]}"}, timeout=10)
         pets = r.json().get("data",[])
         return pets[0].get("id") if pets else None
-    except:
-        return None
+    except: return None
 
 def ws_run():
     while True:
         try:
             r = rq.get(f"{API}/aipet/ws/auth/{SERIAL}", timeout=10)
             tk = r.json().get("data","")
-            if not tk:
-                time.sleep(5); continue
+            if not tk: time.sleep(5); continue
             url = f"ws://47.118.26.156:8000/api/v1/aipet/ws/{SERIAL}"
             _ws[0] = websocket.WebSocketApp(url,
                 on_open=lambda s: s.send(json.dumps({"type":"auth","access_token":tk})),
@@ -60,42 +51,28 @@ def ws_run():
                 on_close=lambda *a: log("WS closed"))
             log("WS connecting...")
             _ws[0].run_forever()
-        except Exception as e:
-            log(f"WS error: {e}")
+        except Exception as e: log(f"WS error: {e}")
         time.sleep(5)
 
 def on_msg(msg):
     t = msg.get("type","")
     log(f"WS {t}: {json.dumps(msg, ensure_ascii=False)[:200]}")
     if t == "auth" and msg.get("success"):
-        state["online"] = True
-        state["last_seen"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         log("AUTH OK!")
-    elif t == "heartbeat":
-        state["last_seen"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     elif t == "server_command":
         cmd = msg.get("command",""); cid = msg.get("command_id","")
         if cmd == "reminder":
-            rd = msg.get("reminder_data") or msg.get("commandParams") or msg.get("command_params") or {}
+            rd = msg.get("reminder_data") or msg.get("commandParams") or {}
             title = rd.get("title","") or rd.get("content","") or msg.get("title","") or msg.get("content","")
             content = rd.get("content","") or title
             rtime = rd.get("reminder_time","") or rd.get("reminderTime","") or msg.get("reminder_time","")
-            rec = {"command_id":cid, "title":title, "content":content,
-                   "reminder_time":rtime, "received_at":time.strftime("%Y-%m-%dT%H:%M:%S"), "status":"received"}
             log(f"REMINDER: {title}")
-            state["reminders"].insert(0, rec)
-            state["reminders"] = state["reminders"][:50]
+            # Forward to board via Flask API (not SSH)
             try:
-                fp = os.path.join(os.path.dirname(__file__), "reminders.json")
-                with open(fp, "w", encoding="utf-8") as f: json.dump(state["reminders"], f, ensure_ascii=False)
-            except: pass
-            # Push to 8000 sync endpoint - 8000 will SSH into board
-            try:
-                rq.post("http://127.0.0.1:8000/api/board-reminders/sync", json={
-                    "command_id": cid, "title": title, "content": content, "reminder_time": rtime,
-                    "file_path": "", "received_at": rec["received_at"], "status": "received"
-                }, timeout=3, proxies={"http":None,"https":None})
-            except: pass
+                r = rq.post("http://192.168.1.64:5000/api/reminders/create", json={"content":content,"reminder_time":rtime}, timeout=5, proxies={"http":None,"https":None})
+                log(f"Board Flask: {r.status_code} {r.text[:100]}")
+            except Exception as e:
+                log(f"Board Flask error: {e}")
             if _ws[0]:
                 _ws[0].send(json.dumps({"type":"command_response","command_id":cid,"command":cmd,"status":"success"}))
 
@@ -110,11 +87,7 @@ async def startup():
 
 @app.get("/api/status")
 def st():
-    return JSONResponse({"online":state["online"], "last_seen":state["last_seen"], "pet_id":get_pid(), "reminders":len(state["reminders"])})
-
-@app.get("/api/reminders")
-def reminders():
-    return JSONResponse(state["reminders"])
+    return JSONResponse({"online":bool(_utoken[0]), "pet_id":get_pid()})
 
 @app.post("/api/send-reminder")
 def send(data: dict):
@@ -133,8 +106,7 @@ def send(data: dict):
 @app.get("/")
 def index():
     try:
-        fp = os.path.join(os.path.dirname(__file__), "index.html")
-        return HTMLResponse(open(fp, encoding="utf-8").read())
+        return HTMLResponse(open(os.path.join(os.path.dirname(__file__), "index.html"), encoding="utf-8").read())
     except:
         return HTMLResponse("<h1>RM</h1>")
 
