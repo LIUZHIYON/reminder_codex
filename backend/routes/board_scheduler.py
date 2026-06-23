@@ -2,6 +2,9 @@
 from datetime import datetime, timedelta
 
 def check_board_reminders():
+    from routes.presence import process_reminders
+    process_reminders()
+    return
     bf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "board_reminders.json")
     if not os.path.exists(bf):
         return

@@ -273,8 +273,9 @@ function switchTab(tab) {
     document.getElementById("boardContent").style.display = "block";
     loadBoardStatus();
     loadBoardReminders();
+    loadBoardPresence();
     clearInterval(boardRefreshInterval);
-    boardRefreshInterval = setInterval(function() { loadBoardStatus(); loadBoardReminders(); }, 5000);
+    boardRefreshInterval = setInterval(function() { loadBoardStatus(); loadBoardReminders(); loadBoardPresence(); }, 5000);
   }
 }
 
@@ -337,7 +338,7 @@ function renderBoardReminders() {
     html += '<div class="content"><div class="title">' + escapeHtml(title) + '</div>';
     html += '<div class="desc">\u6536\u5230\u65f6\u95f4: ' + recv + '</div>';
     html += '<div class="desc file-path">\u6587\u4ef6\u4f4d\u7f6e: ' + escapeHtml(fpath || "\u672a\u77e5") + '</div></div>';
-    html += '<span class="status-badge received">\u2714 \u5df2\u63a5\u6536</span>';
+    html += '<span class="status-badge ' + status + '">' + getBoardStatusLabel(status) + '</span>';
     html += '<div class="actions">';
     html += '<button class="btn-icon play-btn" onclick="playBoardReminder(\x27' + cid + '\x27)" title="\u8bd5\u542c">🔊</button>';
     html += '<button class="btn-icon delete-btn" onclick="deleteBoardReminder(\x27' + cid + '\x27)" title="\u5220\u9664">🗑️</button>';
@@ -386,3 +387,45 @@ function updateClock() {
 }
 setInterval(updateClock, 1000);
 updateClock();
+// Presence
+async function loadBoardPresence() {
+  try {
+    const resp = await fetch("/api/board-reminders/presence");
+    const data = await resp.json();
+    updatePresenceUI(data.present !== false);
+  } catch(e) {}
+}
+function updatePresenceUI(present) {
+  var btn = document.getElementById("presenceToggle");
+  if (!btn) return;
+  if (present) {
+    btn.textContent = "\uD83D\uDC64 \u6709\u4EBA";
+    btn.className = "presence-toggle on";
+  } else {
+    btn.textContent = "\uD83D\uDEAB \u6CA1\u4EBA";
+    btn.className = "presence-toggle off";
+  }
+}
+async function togglePresence() {
+  var btn = document.getElementById("presenceToggle");
+  if (!btn) return;
+  var isPresent = btn.classList.contains("off");
+  try {
+    await fetch("/api/board-reminders/presence", { method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({present: isPresent}) });
+    updatePresenceUI(isPresent);
+  } catch(e) {}
+}
+function getBoardStatusLabel(status) {
+  var labels = {
+    "received": "\u2705 \u5DF2\u63A5\u6536",
+    "pending": "\u23F3 \u5F85\u64AD\u653E",
+    "delayed": "\uD83D\uDD07 \u5EF6\u65F6\u4E2D",
+    "timeout": "\u23F0 \u5DF2\u8D85\u65F6",
+    "played": "\u2705 \u5DF2\u64AD\u653E",
+    "triggered": "\u2705 \u5DF2\u64AD\u653E",
+    "missed": "\u23ED\uFE0F \u5DF2\u9519\u8FC7"
+  };
+  return labels[status] || status;
+}

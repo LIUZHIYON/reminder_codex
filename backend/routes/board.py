@@ -117,6 +117,25 @@ async def sync_board_reminder(data: BoardReminderSync):
             print("Sync TTS error: " + str(_e))
     return {"success": True, "count": len(records)}
 
+@router.get("/presence")
+async def get_presence():
+    pf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "board_presence.json")
+    if os.path.exists(pf):
+        try:
+            return json.load(open(pf, "r", encoding="utf-8"))
+        except:
+            pass
+    return {"present": True, "updated_at": ""}
+
+@router.post("/presence")
+async def set_presence(data: dict):
+    present = data.get("present", True)
+    pf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "board_presence.json")
+    os.makedirs(os.path.dirname(pf), exist_ok=True)
+    with open(pf, "w", encoding="utf-8") as f:
+        json.dump({"present": present, "updated_at": datetime.now().isoformat()}, f)
+    return {"success": True, "present": present}
+
 @router.get("/status")
 async def board_status():
     online = _check_online()

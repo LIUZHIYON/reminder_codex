@@ -569,3 +569,40 @@ body {
   border-radius: 6px;
   margin: 0 12px;
 }
+/* Presence toggle */
+.presence-toggle {
+  border: none;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: auto;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.presence-toggle.on {
+  background: #00b894;
+  color: white;
+}
+.presence-toggle.off {
+  background: #d63031;
+  color: white;
+}
+.presence-toggle:hover {
+  opacity: 0.85;
+}
+
+/* Status badges */
+.status-badge.delayed {
+  background: #ffeaa7 !important;
+  color: #856404 !important;
+}
+.status-badge.timeout {
+  background: #fd79a8 !important;
+  color: #6c1f2e !important;
+}
+.status-badge.missed {
+  background: #b2bec3 !important;
+  color: #2d3436 !important;
+}
