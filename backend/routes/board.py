@@ -161,6 +161,20 @@ async def list_board_reminders():
                 item["board_host"] = BOARD_HOST
                 item["title"] = item.get("content", "")
                 item["file_path"] = item.get("audio_file", BOARD_AUDIO_DIR)
+            # Preserve final statuses from old cache
+            old_cache = _load_cache()
+            old_map = {}
+            for o in old_cache:
+                k = o.get("command_id", "") or str(o.get("id", ""))
+                if k:
+                    old_map[k] = o
+            for item in data:
+                k = str(item.get("id", ""))
+                if k in old_map:
+                    o = old_map[k]
+                    if o.get("status") in ("played", "timeout", "missed"):
+                        item["status"] = o["status"]
+                        item["audio_file"] = o.get("audio_file", item.get("audio_file", ""))
             _save_cache(data)
             return data
         except:
