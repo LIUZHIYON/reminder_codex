@@ -6,7 +6,7 @@ import paramiko
 
 router = APIRouter(prefix="/api/board-reminders", tags=["board-reminders"])
 
-BOARD_HOST = "192.168.1.40"
+BOARD_HOST = "192.168.1.64"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
 BOARD_BASE_DIR = "/home/cat/reminder_system"

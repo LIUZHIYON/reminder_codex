@@ -2,13 +2,13 @@
 # ==============================================================
 # deploy.sh — 部署 reminder 系统到 RK3576 板子
 # 板子: RK3576 (ARM64)
-# IP:   192.168.1.40
+# IP:   192.168.1.64
 # 用户: cat
 # 密码: temppwd
 # ==============================================================
 set -e
 
-BOARD_IP="192.168.1.40"
+BOARD_IP="192.168.1.64"
 BOARD_USER="cat"
 BOARD_PASS="temppwd"
 REMOTE_DIR="/home/cat/robot_reminder"

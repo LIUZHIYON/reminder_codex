@@ -76,14 +76,14 @@ bash deploy.sh
 ### 4. 在 RK3576 上运行 (有 ROS2)
 
 ```bash
-ssh cat@192.168.1.40
+ssh cat@192.168.1.64
 ros2 run robot_reminder reminder_node
 ```
 
 ### 5. 在 RK3576 上运行 (无 ROS2)
 
 ```bash
-ssh cat@192.168.1.40
+ssh cat@192.168.1.64
 cd /home/cat/robot_reminder
 python3 -c "from robot_reminder.reminder_node import main; main()"
 ```

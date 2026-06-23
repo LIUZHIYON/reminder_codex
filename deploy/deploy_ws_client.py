@@ -1,6 +1,6 @@
 import paramiko, os, time
 
-host = "192.168.1.40"
+host = "192.168.1.64"
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 client.connect(host, username="cat", password="temppwd", timeout=10)
