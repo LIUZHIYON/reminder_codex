@@ -1,4 +1,4 @@
-﻿import sys, json, time, threading, os
+﻿import sys, json, time, threading, os, http.client
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
 def _rq_no_proxy_get(u, **k): k["proxies"] = {"http":None,"https":None}; return _rq_orig_get(u, **k)
@@ -69,8 +69,12 @@ def on_msg(msg):
             log(f"REMINDER: {title}")
             # Forward to board via Flask API (not SSH)
             try:
-                r = rq.post("http://192.168.1.64:5000/api/reminders/create", json={"content":content,"reminder_time":rtime}, timeout=5, proxies={"http":None,"https":None})
-                log(f"Board Flask: {r.status_code} {r.text[:100]}")
+                _body = json.dumps({"content":content,"reminder_time":rtime}, ensure_ascii=False).encode("utf-8")
+                _conn = http.client.HTTPConnection("192.168.1.64", 5000, timeout=3)
+                _conn.request("POST", "/api/reminders/create", _body, {"Content-Type": "application/json"})
+                _resp = _conn.getresponse()
+                _resp.read()
+                _conn.close()
             except Exception as e:
                 log(f"Board Flask error: {e}")
             if _ws[0]:
@@ -100,7 +104,18 @@ def send(data: dict):
                "content":title, "commandParams":{"reminder_data":{"title":title, "content":content, "reminder_time":rtime, "repeat_type":data.get("repeat_type","")}}}
     r = rq.post(f"{API}/aipet/app/chatWith/{pid}", headers={"Authorization":f"Bearer {_utoken[0]}", "Content-Type":"application/json"}, json=payload, timeout=10)
     result = r.json()
-    if result.get("success"): return JSONResponse({"success":True})
+    if result.get("success"):
+        # Direct POST to board Flask API (bypass proxy with http.client)
+        try:
+            _body = json.dumps({"content":title,"reminder_time":rtime}, ensure_ascii=False).encode("utf-8")
+            _conn = http.client.HTTPConnection("192.168.1.64", 5000, timeout=3)
+            _conn.request("POST", "/api/reminders/create", _body, {"Content-Type": "application/json"})
+            _resp = _conn.getresponse()
+            _resp.read()
+            _conn.close()
+        except Exception as e:
+            log(f"Board direct POST error: {e}")
+        return JSONResponse({"success":True})
     raise HTTPException(500, result.get("msg","Failed"))
 
 @app.get("/")
