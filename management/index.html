@@ -49,53 +49,41 @@ button:disabled{background:#b2bec3}
 </div>
 
 <div class="card">
-  <h3>?? ?????????</h3>
-  <button onclick="loadRemoteReminders()" style="margin-bottom:10px">??</button>
-  <div id="remoteList"><p style="text-align:center;padding:20px;color:#888;font-size:13px">????????</p></div>
+  <h3>Remote Reminders</h3>
+  <button onclick="loadRemoteReminders()" style="margin-bottom:10px">Refresh</button>
+  <div id="remoteList"><p style="text-align:center;padding:20px;color:#888;font-size:13px">Click Refresh to load</p></div>
 </div>
 
 <script>
 async function loadRemoteReminders() {
   var list = document.getElementById("remoteList");
-  list.innerHTML = "???...";
+  list.innerHTML = "Loading...";
   try {
     var r = await fetch("/api/remote-reminders");
     var data = await r.json();
     var rows = data.rows || data || [];
-    if (!rows.length) { list.innerHTML = "<p style=\'text-align:center;padding:20px;color:#888\'>????</p>"; return; }
-    var html = "<table style=\'width:100%;border-collapse:collapse;font-size:12px\'>";
-    html += "<tr style=\'background:#f0f0f0\'>";
-    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>ID</th>";
-    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
-    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
-    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
-    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
-    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
-    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>????</th>";
-    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
-    html += "</tr>";
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i];
-      html += "<tr>";
-      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.id||"") + "</td>";
-      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.title||"") + "</td>";
-      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.content||"") + "</td>";
-      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.reminderTime||"") + "</td>";
-      var statusLabel = "";
-      var statusMap = {"pending":"?","sent":"??","executing":"??","completed":"?","failed":"?","cancelled":"??"};
-      statusLabel = (statusMap[r.status]||"") + " " + (r.status||"");
-      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + statusLabel + "</td>";
-      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.repeatType||"-") + "</td>";
-      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.sentTime||"-") + "</td>";
-      var resultStr = r.result ? JSON.stringify(r.result).substring(0,30) : (r.errorMessage||"-");
-      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + resultStr + "</td>";
-      html += "</tr>";
+    if (!rows.length) { list.innerHTML = "<p style=\'text-align:center;padding:20px;color:#888\'>No reminders</p>"; return; }
+    var tbl = "<table style=\'width:100%;border-collapse:collapse;font-size:12px\'>";
+    tbl += "<tr style=\'background:#f0f0f0\'>";
+    tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>ID</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Title</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Content</th>";
+    tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Time</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Status</th>";
+    tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Repeat</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Sent</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Result</th></tr>";
+    var sm = {pending:"PENDING",sent:"SENT",executing:"EXECUTING",completed:"COMPLETED",failed:"FAILED",cancelled:"CANCELLED"};
+    for (var i=0;i<rows.length;i++) {
+      var r=rows[i];
+      tbl += "<tr><td style=\'padding:4px;border:1px solid #ddd\'>"+(r.id||"")+"</td>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.title||"")+"</td>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.content||"")+"</td>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.reminderTime||"")+"</td>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(sm[r.status]||r.status||"")+"</td>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.repeatType||"-")+"</td>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.sentTime||"-")+"</td>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.result?JSON.stringify(r.result).substring(0,30):(r.errorMessage||"-"))+"</td></tr>";
     }
-    html += "</table>";
-    list.innerHTML = html;
+    tbl += "</table>";
+    list.innerHTML = tbl;
   } catch(e) {
-    list.innerHTML = "<span style=\'color:red\'>????: " + e.message + "</span>";
-    console.error(e);
+    list.innerHTML = "<span style=\'color:red\'>Error: "+e.message+"</span>";
   }
 }
 </script>
