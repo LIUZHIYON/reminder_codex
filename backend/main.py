@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import logging
+import asyncio
 
 logging.basicConfig(level=logging.INFO)
 
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     print(f"[App] Database initialized")
     await start_scheduler()
+    asyncio.create_task(_board_loop())
     print(f"[App] Server starting at http://{config.HOST}:{config.PORT}")
     yield
     await stop_scheduler()
@@ -78,3 +80,13 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host=config.HOST, port=config.PORT, reload=False)
 
+
+
+async def _board_loop():
+    while True:
+        try:
+            from routes.board_scheduler import check_board_reminders
+            check_board_reminders()
+        except Exception:
+            pass
+        await asyncio.sleep(5)
