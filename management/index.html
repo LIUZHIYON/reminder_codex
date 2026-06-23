@@ -47,6 +47,58 @@ button:disabled{background:#b2bec3}
 <h3>📜 设备收到的提醒</h3>
 <div id="list"><p style="text-align:center;padding:20px;color:#888;font-size:13px">加载中...</p></div>
 </div>
+
+<div class="card">
+  <h3>?? ?????????</h3>
+  <button onclick="loadRemoteReminders()" style="margin-bottom:10px">??</button>
+  <div id="remoteList"><p style="text-align:center;padding:20px;color:#888;font-size:13px">????????</p></div>
+</div>
+
+<script>
+async function loadRemoteReminders() {
+  var list = document.getElementById("remoteList");
+  list.innerHTML = "???...";
+  try {
+    var r = await fetch("/api/remote-reminders");
+    var data = await r.json();
+    var rows = data.rows || data || [];
+    if (!rows.length) { list.innerHTML = "<p style=\'text-align:center;padding:20px;color:#888\'>????</p>"; return; }
+    var html = "<table style=\'width:100%;border-collapse:collapse;font-size:12px\'>";
+    html += "<tr style=\'background:#f0f0f0\'>";
+    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>ID</th>";
+    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
+    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
+    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
+    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
+    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
+    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>????</th>";
+    html += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>??</th>";
+    html += "</tr>";
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      html += "<tr>";
+      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.id||"") + "</td>";
+      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.title||"") + "</td>";
+      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.content||"") + "</td>";
+      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.reminderTime||"") + "</td>";
+      var statusLabel = "";
+      var statusMap = {"pending":"?","sent":"??","executing":"??","completed":"?","failed":"?","cancelled":"??"};
+      statusLabel = (statusMap[r.status]||"") + " " + (r.status||"");
+      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + statusLabel + "</td>";
+      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.repeatType||"-") + "</td>";
+      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + (r.sentTime||"-") + "</td>";
+      var resultStr = r.result ? JSON.stringify(r.result).substring(0,30) : (r.errorMessage||"-");
+      html += "<td style=\'padding:4px;border:1px solid #ddd\'>" + resultStr + "</td>";
+      html += "</tr>";
+    }
+    html += "</table>";
+    list.innerHTML = html;
+  } catch(e) {
+    list.innerHTML = "<span style=\'color:red\'>????: " + e.message + "</span>";
+    console.error(e);
+  }
+}
+</script>
 <script>
 document.getElementById("serialDisplay").textContent = "6976f96f-bc80-56e3-9b27-13d12cdde9d3";
 async function refresh(){

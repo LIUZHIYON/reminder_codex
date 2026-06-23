@@ -1,4 +1,4 @@
-﻿import json, time, threading, os, sys
+import json, time, threading, os, sys
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
 def _rq_no_proxy_get(u, **k): k["proxies"] = {"http":None,"https":None}; return _rq_orig_get(u, **k)
@@ -144,6 +144,22 @@ def send(data: dict):
     except: pass
     return JSONResponse({"success":True,"reminder_id":reminder_id,"send_result":send_result.get("msg","")})
 
+
+
+@app.get("/api/remote-reminders")
+def remote_reminders():
+    if not refresh():
+        raise HTTPException(500, "Login failed")
+    pid = get_pid()
+    if not pid:
+        raise HTTPException(500, "No device")
+    try:
+        r = rq.get(f"{API}/aipet/app/reminders/list/{pid}/1/50",
+                   headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
+        result = r.json()
+        return JSONResponse(result.get("data", result))
+    except Exception as e:
+        raise HTTPException(500, str(e))
 @app.get("/")
 def index():
     try:
