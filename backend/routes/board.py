@@ -1,4 +1,4 @@
-﻿import os, json
+import os, json
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -175,6 +175,9 @@ async def list_board_reminders():
                     if o.get("status") in ("played", "timeout", "missed", "delayed"):
                         item["status"] = o["status"]
                         item["audio_file"] = o.get("audio_file", item.get("audio_file", ""))
+                        item["presence_delay_count"] = o.get("presence_delay_count", 0)
+                        item["next_check"] = o.get("next_check", "")
+                        item["timeout_minutes"] = o.get("timeout_minutes", 60)
             _save_cache(data)
             return data
         except:

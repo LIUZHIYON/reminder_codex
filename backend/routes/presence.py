@@ -1,4 +1,4 @@
-﻿import os, json
+import os, json
 from datetime import datetime, timedelta
 
 BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -52,6 +52,13 @@ def process_reminders():
                         continue
                 except:
                     pass
+            tm = r.get("timeout_minutes", 60)
+            if rtd and now - rtd > timedelta(minutes=tm):
+                r["status"] = "timeout"
+                r["timeout_reason"] = "absent_too_long"
+                changed = True
+                print(f"[Presence] Timeout (total): {title}")
+                continue
         if not present:
             dc = r.get("presence_delay_count", 0)
             tm = r.get("timeout_minutes", 60)
