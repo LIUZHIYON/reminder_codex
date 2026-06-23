@@ -1,0 +1,10 @@
+# AI宠物机器人 WebSocket 模块依赖
+
+# WebSocket 客户端
+websockets>=10.0
+
+# HTTP 客户端（用于获取 Token）
+aiohttp>=3.8.0
+
+# JSON 处理（可选，用于更好的性能）
+# orjson>=3.8.0

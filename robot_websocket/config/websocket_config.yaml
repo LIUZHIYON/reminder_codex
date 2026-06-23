@@ -1,0 +1,21 @@
+# AI宠物机器人 WebSocket 配置文件
+
+# 服务器配置
+base_url: "https://airobot.lenudo.com"
+serial_number: "6976f96f-bc80-56e3-9b27-13d12cdde9d3"
+
+# 连接配置
+heartbeat_interval: 30          # 心跳间隔（秒）
+reconnect_delay: 3              # 重连延迟（秒）
+max_reconnect_attempts: 10      # 最大重连次数
+ack_timeout: 5                  # ACK 超时时间（秒）
+enable_auto_reconnect: true     # 是否启用自动重连
+connection_timeout: 10          # 连接超时（秒）
+
+# 状态上报配置
+status_update_interval: 5.0     # 状态上报间隔（秒）
+
+# 话题配置
+chat_topic: "/robot/chat"
+command_topic: "/robot/command"
+status_topic: "/robot/status"
