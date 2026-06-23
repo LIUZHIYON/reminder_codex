@@ -321,7 +321,7 @@ async function loadBoardReminders() {
 function renderBoardReminders() {
   const grid = document.getElementById("boardReminderGrid");
   if (!boardReminders || boardReminders.length === 0) {
-    grid.innerHTML = '<div class="empty-state"><div class="big-icon">\U0001f5a5\ufe0f</div><h2>\u677f\u5b50\u63d0\u9192</h2><p>\u677f\u5b50\u4e0a\u66ab\u65e0\u63d0\u9192\u4e8b\u9879</p></div>';
+    grid.innerHTML = '<div class="empty-state"><div class="big-icon">🖥️</div><h2>\u677f\u5b50\u63d0\u9192</h2><p>\u677f\u5b50\u4e0a\u66ab\u65e0\u63d0\u9192\u4e8b\u9879</p></div>';
     return;
   }
   let html = "";
@@ -339,8 +339,8 @@ function renderBoardReminders() {
     html += '<div class="desc file-path">\u6587\u4ef6\u4f4d\u7f6e: ' + escapeHtml(fpath || "\u672a\u77e5") + '</div></div>';
     html += '<span class="status-badge received">\u2714 \u5df2\u63a5\u6536</span>';
     html += '<div class="actions">';
-    html += '<button class="btn-icon play-btn" onclick="playBoardReminder(\x27' + cid + '\x27)" title="\u8bd5\u542c">\U0001f50a</button>';
-    html += '<button class="btn-icon delete-btn" onclick="deleteBoardReminder(\x27' + cid + '\x27)" title="\u5220\u9664">\U0001f5d1\ufe0f</button>';
+    html += '<button class="btn-icon play-btn" onclick="playBoardReminder(\x27' + cid + '\x27)" title="\u8bd5\u542c">🔊</button>';
+    html += '<button class="btn-icon delete-btn" onclick="deleteBoardReminder(\x27' + cid + '\x27)" title="\u5220\u9664">🗑️</button>';
     html += '</div></div>';
   }
   grid.innerHTML = html;
