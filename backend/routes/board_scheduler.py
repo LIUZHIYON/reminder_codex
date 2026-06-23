@@ -23,6 +23,11 @@ def check_board_reminders():
         except:
             continue
         if rtd <= now:
+            if now - rtd > timedelta(minutes=5):
+                r["status"] = "missed"
+                changed = True
+                print("[Board] Skipped (past): " + title)
+                continue
             title = r.get("title", "") or r.get("content", "")
             content = r.get("content", "") or title
             aid = abs(hash(title + rt)) % 100000

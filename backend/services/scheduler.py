@@ -11,6 +11,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def check_and_play_reminders():
+    try:
+        from routes.board_scheduler import check_board_reminders
+        check_board_reminders()
+    except:
+        pass
     """Check for due reminders and play them."""
     due_list = []
     try:

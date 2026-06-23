@@ -373,3 +373,16 @@ async function deleteBoardReminder(cmdId) {
     alert("\u5220\u9664\u5931\u8d25: " + e.message);
   }
 }
+// Clock
+function updateClock() {
+  var n = new Date();
+  var y = n.getFullYear();
+  var mo = String(n.getMonth() + 1).padStart(2, "0");
+  var d = String(n.getDate()).padStart(2, "0");
+  var h = String(n.getHours()).padStart(2, "0");
+  var mi = String(n.getMinutes()).padStart(2, "0");
+  var s = String(n.getSeconds()).padStart(2, "0");
+  document.getElementById("clockDisplay").textContent = y + "-" + mo + "-" + d + " " + h + ":" + mi + ":" + s;
+}
+setInterval(updateClock, 1000);
+updateClock();
