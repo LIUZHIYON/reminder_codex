@@ -1,9 +1,4 @@
-﻿#!/usr/bin/env python3
-"""
-Board WebSocket Client - connects to AI Pet server via WS,
-receives reminder commands, stores in local SQLite.
-"""
-import json, time, threading, sqlite3, os, sys, logging
+﻿import json, time, threading, sqlite3, os, sys, logging
 
 logging.basicConfig(level=logging.INFO, format="[WS] %(asctime)s %(message)s")
 log = logging.getLogger(__name__)
@@ -31,12 +26,17 @@ class BoardWSClient:
             return ""
 
     def insert_reminder(self, msg):
-        """Insert reminder from server command into SQLite."""
+        """Insert reminder from server_command into SQLite.
+        Follows AI-Pet-WebSocket Section 4.1.1 (reminder) format.
+        """
         try:
-            rd = msg.get("reminder_data") or msg.get("commandParams") or msg.get("command_params") or {}
+            # command_params.reminder_data is the standard location (Section 4.1.1)
+            cp = msg.get("command_params") or msg.get("commandParams") or {}
+            rd = cp.get("reminder_data") or msg.get("reminder_data") or {}
             title = rd.get("title","") or rd.get("content","") or msg.get("title","") or msg.get("content","")
             content = rd.get("content","") or title
             rtime = rd.get("reminder_time","") or rd.get("reminderTime","") or msg.get("reminder_time","")
+            rsrc = cp.get("reminder_source", "app_chat")  # Section 22.6 adds this field
             if not title or not rtime:
                 log.warning(f"Incomplete reminder: {title} / {rtime}")
                 return None
@@ -47,7 +47,7 @@ class BoardWSClient:
             conn.commit()
             rid = c.lastrowid
             conn.close()
-            log.info(f"Saved reminder #{rid}: {title[:30]} @ {rtime}")
+            log.info(f"Saved reminder #{rid}: {title[:30]} @ {rtime} (source={rsrc})")
             return rid
         except Exception as e:
             log.error(f"Insert error: {e}")
@@ -70,15 +70,18 @@ class BoardWSClient:
             log.info(f"Command: {cmd} id={cid}")
             if cmd == "reminder":
                 rid = self.insert_reminder(msg)
+                # Section 3.6: command_response format
+                resp = {
+                    "type": "command_response",
+                    "command_id": cid,
+                    "command": cmd,
+                    "status": "success" if rid else "failed",
+                    "result": {"received": bool(rid), "board_id": rid, "played": False, "user_acknowledged": False} if rid else {},
+                    "error": None if rid else "Failed to save reminder"
+                }
+                ws.send(json.dumps(resp))
                 if rid:
-                    ws.send(json.dumps({
-                        "type": "command_response",
-                        "command_id": cid,
-                        "command": cmd,
-                        "status": "success",
-                        "result": {"received": True, "board_id": rid}
-                    }))
-                    log.info(f"Response sent for reminder #{rid}")
+                    log.info(f"Response sent for reminder #{rid} (Section 3.6)")
 
     def on_error(self, ws, error):
         log.error(f"WS error: {error}")
