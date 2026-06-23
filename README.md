@@ -12,6 +12,7 @@
 - **🤖 多后端 TTS 自动回退** — PowerShell → pyttsx3 → gTTS → edge-tts
 - **🔗 板子协同** — 通过 AI Pet 服务器与 RK3576 板子通信
 - **🖥️ 板子实时监控** — 查看板子在线状态、提醒列表、文件路径
+- **🕐 实时时钟** — 页面顶部显示当前时间
 
 ## 系统架构
 
@@ -49,13 +50,23 @@
 **发送提醒：**
 ```
 Web界面 → 8001 HTTP → AI Pet 服务器 → WS → 8001 on_msg
-           ↓ (同时直连)
+           ↓ (直连)
            http.client → 板子 Flask:5000 → SQLite
+           ↓ (同步到本地缓存)
+           8000 /api/board-reminders/sync → cache + TTS
 ```
 
 **查看板子提醒：**
 ```
 Web界面 → 8000 → SSH → 板子 SQLite 数据库
+```
+
+**自动播报：**
+```
+调度器(5秒间隔) → check_board_reminders()
+                    ↓
+                   缓存 → 到期≤5min → TTS生成 → 播放
+                   缓存 → 到期>5min → 标记missed
 ```
 
 ## 快速启动
@@ -102,7 +113,7 @@ python server.py
 ### 板子提醒
 在 8000 端口的「板子提醒」标签页中：
 - 查看板子在线状态
-- 查看板子上的提醒列表（实时通过 SSH 读取）
+- 查看板子上的提醒列表（实时通过 SSH 读取，每 5 秒自动刷新）
 - 点击 🔊 播放按钮 → TTS 生成语音本地播放
 - 点击 🗑️ 删除板子上的提醒
 
@@ -110,7 +121,7 @@ python server.py
 在 8001 端口的网页中：
 - 输入提醒标题、内容、时间
 - 点击「发送提醒」
-- 提醒通过 AI Pet 服务器发给板子，同时直连板子 Flask API
+- 提醒通过 AI Pet 服务器发给板子，同时直连板子 Flask API 并同步到本地缓存
 
 ## TTS 语音合成
 
@@ -141,8 +152,8 @@ Windows 上默认使用 `Microsoft Huihui Desktop` 中文语音。
 | GET | /api/board-reminders/status | 板子状态 |
 | POST | /api/board-reminders/sync | 同步提醒到本地缓存 |
 | DELETE | /api/board-reminders/{id} | 删除板子提醒 |
-| POST | /api/board-reminders/{id}/play | 播放提醒语音 |
-| POST | /api/board-reminders/{id}/generate-tts | 生成 TTS 语音 |
+| POST | /api/board-reminders/{id}/play | 播放提醒语音（板子无音频则TTS） |
+| POST | /api/board-reminders/{id}/generate-tts | 手动生成 TTS 语音 |
 
 ### 管理服务器 (8001)
 | 方法 | 路径 | 说明 |
@@ -228,6 +239,14 @@ nohup python3 board_ws_client.py > logs/ws_client.log 2>&1 &
 
 ### 板子提醒列表为空
 检查板子是否在线（状态灯），以及 SSH 连接是否正常。
+
+### 提醒到时间了没有自动播放
+可能原因和修复：
+1. **8001 发送没同步到本地缓存** — 已修复：send() 内 POST 到 `/api/board-reminders/sync`
+2. **`timedelta` 未导入导致调度器崩溃** — 已修复：`board_scheduler.py` 添加 `from datetime import timedelta`
+3. **`title` 在定义前使用导致 NameError** — 已修复：`title = r.get(...)` 移到 `if rtd <= now:` 之前
+4. **同步端点 `except: pass` 吞掉 TTS 错误** — 已修复：改为打印错误日志
+5. **TTS 生成了但不播放** — 已修复：同步端点检查时间已到则直接播放
 
 ## 技术栈
 
