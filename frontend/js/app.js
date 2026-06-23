@@ -258,6 +258,7 @@ function showToast(message, type = "info") {
 const BOARD_API = "/api/board-reminders";
 let boardReminders = [];
 let boardOnline = false;
+let boardRefreshInterval = null;
 
 function switchTab(tab) {
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
@@ -265,12 +266,15 @@ function switchTab(tab) {
     document.querySelector(".tab:first-child").classList.add("active");
     document.querySelector(".main").style.display = "block";
     document.getElementById("boardContent").style.display = "none";
+    clearInterval(boardRefreshInterval);
   } else {
     document.querySelector(".tab:last-child").classList.add("active");
     document.querySelector(".main").style.display = "none";
     document.getElementById("boardContent").style.display = "block";
     loadBoardStatus();
     loadBoardReminders();
+    clearInterval(boardRefreshInterval);
+    boardRefreshInterval = setInterval(function() { loadBoardStatus(); loadBoardReminders(); }, 5000);
   }
 }
 

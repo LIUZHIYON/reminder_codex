@@ -123,7 +123,7 @@ async def board_status():
     info = {"online": online, "host": BOARD_HOST}
     if online:
         q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT COUNT(*) FROM reminders'); print(c.fetchone()[0]); conn.close()"
-        out, err = _ssh_exec(q)
+        out, err = _ssh_exec_py(q)
         if out:
             try:
                 info["reminder_count"] = int(out.strip())
@@ -134,7 +134,7 @@ async def board_status():
 @router.get("")
 async def list_board_reminders():
     q = "import sqlite3,json; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('PRAGMA table_info(reminders)'); cols=[r[1] for r in c.fetchall()]; c.execute('SELECT * FROM reminders ORDER BY id DESC LIMIT 50'); rows=c.fetchall(); print(json.dumps([dict(zip(cols,row)) for row in rows],ensure_ascii=False)); conn.close()"
-    out, err = _ssh_exec(q)
+    out, err = _ssh_exec_py(q)
     if out:
         try:
             data = json.loads(out)
@@ -151,7 +151,7 @@ async def list_board_reminders():
 @router.delete("/{reminder_id}")
 async def delete_board_reminder(reminder_id: int):
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('DELETE FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); conn.commit(); print('OK'); conn.close()"
-    out, err = _ssh_exec(q)
+    out, err = _ssh_exec_py(q)
     if not out or "OK" not in out:
         raise HTTPException(500, detail="Board deletion failed")
     return {"success": True}
@@ -166,7 +166,7 @@ async def play_board_reminder(reminder_id: int):
 
     # Try to get content from board
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content, audio_file FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); print(row[1] if row and row[1] else ''); conn.close()"
-    out, err = _ssh_exec(q)
+    out, err = _ssh_exec_py(q)
     if not out:
         raise HTTPException(404, detail="Reminder not found on board")
     lines = out.strip().split("\n")
@@ -198,7 +198,7 @@ async def play_board_reminder(reminder_id: int):
 async def generate_board_tts(reminder_id: int):
     """Generate TTS audio locally for a board reminder."""
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); conn.close()"
-    out, err = _ssh_exec(q)
+    out, err = _ssh_exec_py(q)
     content = (out or "").strip()
     if not content:
         raise HTTPException(404, detail="Reminder not found on board")
