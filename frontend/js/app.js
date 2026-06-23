@@ -419,13 +419,17 @@ async function togglePresence() {
 }
 function getBoardStatusLabel(status) {
   var labels = {
+    "pending": "\u23F3 \u5F85\u4E0B\u53D1",
+    "sent": "\uD83D\uDCE8 \u5DF2\u4E0B\u53D1",
+    "executing": "\uD83D\uDD04 \u6267\u884C\u4E2D",
+    "completed": "\u2705 \u5DF2\u5B8C\u6210",
+    "failed": "\u274C \u5931\u8D25",
+    "cancelled": "\uD83D\uDEAB \u5DF2\u53D6\u6D88",
     "received": "\u2705 \u5DF2\u63A5\u6536",
-    "pending": "\u23F3 \u5F85\u64AD\u653E",
     "delayed": "\uD83D\uDD07 \u5EF6\u65F6\u4E2D",
     "timeout": "\u23F0 \u5DF2\u8D85\u65F6",
     "played": "\u2705 \u5DF2\u64AD\u653E",
-    "triggered": "\u2705 \u5DF2\u64AD\u653E",
-    "missed": "\u23F0 \u5DF2\u8D85\u65F6"
+    "triggered": "\u2705 \u5DF2\u64AD\u653E"
   };
   return labels[status] || status;
 }
