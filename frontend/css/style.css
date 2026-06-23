@@ -558,11 +558,14 @@ body {
 
 /* Clock */
 .clock {
-  font-size: 13px;
-  color: rgba(255,255,255,0.85);
-  font-weight: 500;
+  font-size: 14px;
+  color: #ffffff;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.5px;
-  margin-right: 16px;
+  letter-spacing: 1px;
   white-space: nowrap;
+  background: rgba(255,255,255,0.15);
+  padding: 4px 12px;
+  border-radius: 6px;
+  margin: 0 12px;
 }
