@@ -78,6 +78,47 @@ def _sftp_get(remote_path, local_path):
     except Exception as e:
         return False
 
+def _ssh_update_reminder(command_id, new_status):
+    """Update board SQLite reminder status via SSH using SFTP temp script."""
+    if not command_id:
+        return False
+    py_code = (
+        "import sqlite3\n"
+        "conn=sqlite3.connect('" + BOARD_DB_PATH + "')\n"
+        "c=conn.cursor()\n"
+        "try:\n"
+        "    c.execute('ALTER TABLE reminders ADD COLUMN command_id TEXT')\n"
+        "    conn.commit()\n"
+        "except:\n"
+        "    pass\n"
+        "c.execute('UPDATE reminders SET status=? WHERE command_id=?', ('" + new_status + "','" + command_id + "'))\n"
+        "if c.rowcount==0:\n"
+        "    c.execute('UPDATE reminders SET status=? WHERE id=(SELECT MAX(id) FROM reminders)', ('" + new_status + "',))\n"
+        "conn.commit()\n"
+        "conn.close()\n"
+        "print('ok')\n"
+    )
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
+        sftp = client.open_sftp()
+        remote_path = "/tmp/_upd_status.py"
+        with sftp.open(remote_path, "w") as f:
+            f.write(py_code)
+        sftp.close()
+        _, stdout, stderr = client.exec_command("python3 " + remote_path)
+        out = stdout.read().decode()
+        err = stderr.read().decode()[:500]
+        client.exec_command("rm -f " + remote_path)
+        client.close()
+        if err:
+            print("SSH update stderr:", err)
+        return True
+    except Exception as e:
+        print("SSH update failed:", e)
+        return False
+
 class BoardReminderSync(BaseModel):
     command_id: str = ""
     title: str
@@ -116,6 +157,23 @@ async def sync_board_reminder(data: BoardReminderSync):
         except Exception as _e:
             print("Sync TTS error: " + str(_e))
     return {"success": True, "count": len(records)}
+
+@router.post("/status-update")
+async def status_update(data: dict):
+    """Update a board reminder status and sync to board SQLite via SSH."""
+    command_id = data.get("command_id", "")
+    new_status = data.get("status", "")
+    if not command_id or not new_status:
+        raise HTTPException(400, "command_id and status required")
+    records = _load_cache()
+    for r in records:
+        if r.get("command_id") == command_id:
+            r["status"] = new_status
+            r["status_updated_at"] = datetime.now().isoformat()
+            break
+    _save_cache(records)
+    ssh_ok = _ssh_update_reminder(command_id, new_status)
+    return {"success": True, "ssh_sync": ssh_ok}
 
 @router.get("/presence")
 async def get_presence():
@@ -172,12 +230,18 @@ async def list_board_reminders():
                 k = str(item.get("id", ""))
                 if k in old_map:
                     o = old_map[k]
-                    if o.get("status") in ("played", "timeout", "missed", "delayed"):
+                    if o.get("status") in ("completed", "failed", "missed", "executing", "cancelled"):
                         item["status"] = o["status"]
                         item["audio_file"] = o.get("audio_file", item.get("audio_file", ""))
                         item["presence_delay_count"] = o.get("presence_delay_count", 0)
                         item["next_check"] = o.get("next_check", "")
                         item["timeout_minutes"] = o.get("timeout_minutes", 60)
+                # Also check by command_id
+                ck = str(item.get("command_id", ""))
+                if ck and ck in old_map:
+                    o = old_map[ck]
+                    if o.get("status") in ("completed", "failed", "missed", "executing", "cancelled"):
+                        item["status"] = o["status"]
             _save_cache(data)
             return data
         except:
@@ -186,6 +250,13 @@ async def list_board_reminders():
 
 @router.delete("/{reminder_id}")
 async def delete_board_reminder(reminder_id: int):
+    # Also mark as cancelled in cache
+    records = _load_cache()
+    for r in records:
+        if str(r.get("id", "")) == str(reminder_id):
+            r["status"] = "cancelled"
+            _save_cache(records)
+            break
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('DELETE FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); conn.commit(); print('OK'); conn.close()"
     out, err = _ssh_exec_py(q)
     if not out or "OK" not in out:

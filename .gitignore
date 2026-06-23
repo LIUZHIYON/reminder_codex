@@ -33,3 +33,6 @@ venv/
 
 _fix_*.py
 board_reminders.json
+# Temp files
+_tmp*
+board_presence.json

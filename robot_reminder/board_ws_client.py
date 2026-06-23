@@ -1,4 +1,4 @@
-﻿import json, time, threading, sqlite3, os, sys, logging
+import json, time, threading, sqlite3, os, sys, logging
 
 logging.basicConfig(level=logging.INFO, format="[WS] %(asctime)s %(message)s")
 log = logging.getLogger(__name__)
@@ -13,6 +13,24 @@ class BoardWSClient:
     def __init__(self):
         self.ws = None
         self.running = False
+        # Ensure needed columns exist
+        self._ensure_columns()
+
+    def _ensure_columns(self):
+        """Add command_id and reported columns if not exist."""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            for col in ["command_id TEXT", "reported INTEGER DEFAULT 0"]:
+                try:
+                    c.execute("ALTER TABLE reminders ADD COLUMN " + col)
+                    log.info("Added column: " + col)
+                except:
+                    pass
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            log.error(f"Ensure columns error: {e}")
 
     def get_ws_token(self):
         try:
@@ -26,32 +44,75 @@ class BoardWSClient:
             return ""
 
     def insert_reminder(self, msg):
-        """Insert reminder from server_command into SQLite.
-        Follows AI-Pet-WebSocket Section 4.1.1 (reminder) format.
-        """
+        """Insert reminder from server_command into SQLite."""
         try:
-            # command_params.reminder_data is the standard location (Section 4.1.1)
             cp = msg.get("command_params") or msg.get("commandParams") or {}
             rd = cp.get("reminder_data") or msg.get("reminder_data") or {}
             title = rd.get("title","") or rd.get("content","") or msg.get("title","") or msg.get("content","")
             content = rd.get("content","") or title
             rtime = rd.get("reminder_time","") or rd.get("reminderTime","") or msg.get("reminder_time","")
-            rsrc = cp.get("reminder_source", "app_chat")  # Section 22.6 adds this field
+            cid = msg.get("command_id","")
+            rsrc = cp.get("reminder_source", "app_chat")
             if not title or not rtime:
                 log.warning(f"Incomplete reminder: {title} / {rtime}")
                 return None
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
-            c.execute("INSERT INTO reminders (content, reminder_time, status) VALUES (?,?,?)",
-                      (content, rtime, "pending"))
+            c.execute("INSERT INTO reminders (content, reminder_time, status, command_id) VALUES (?,?,?,?)",
+                      (content, rtime, "pending", cid))
             conn.commit()
             rid = c.lastrowid
             conn.close()
-            log.info(f"Saved reminder #{rid}: {title[:30]} @ {rtime} (source={rsrc})")
+            log.info(f"Saved reminder #{rid}: {title[:30]} @ {rtime} (cid={cid})")
             return rid
         except Exception as e:
             log.error(f"Insert error: {e}")
             return None
+
+    def _poll_status_changes(self):
+        """Poll reminders that have status changes and report to server."""
+        while self.running:
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute(
+                    "SELECT id, command_id, content, status, reminder_time "
+                    "FROM reminders "
+                    "WHERE command_id IS NOT NULL AND command_id != '' "
+                    "AND status IN ('completed','failed','cancelled') "
+                    "AND (reported IS NULL OR reported = 0) "
+                    "LIMIT 10"
+                )
+                rows = c.fetchall()
+                for row in rows:
+                    rid, cid, content, status, rtime = row
+                    if not cid:
+                        continue
+                    resp = {
+                        "type": "command_response",
+                        "command_id": cid,
+                        "command": "reminder",
+                        "status": status,
+                        "result": {
+                            "board_id": rid,
+                            "content": content,
+                            "reminder_time": rtime,
+                            "status": status
+                        }
+                    }
+                    if self.ws:
+                        self.ws.send(json.dumps(resp))
+                        log.info(f"Reported status {status} for cid={cid}")
+                    # Mark as reported
+                    c.execute("UPDATE reminders SET reported=1 WHERE id=?", (rid,))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                log.error(f"Poll error: {e}")
+            for _ in range(20):
+                if not self.running:
+                    break
+                time.sleep(0.5)
 
     def on_message(self, ws, raw):
         try:
@@ -70,18 +131,17 @@ class BoardWSClient:
             log.info(f"Command: {cmd} id={cid}")
             if cmd == "reminder":
                 rid = self.insert_reminder(msg)
-                # Section 3.6: command_response format
                 resp = {
                     "type": "command_response",
                     "command_id": cid,
                     "command": cmd,
-                    "status": "success" if rid else "failed",
-                    "result": {"received": bool(rid), "board_id": rid, "played": False, "user_acknowledged": False} if rid else {},
+                    "status": "executing" if rid else "failed",
+                    "result": {"received": bool(rid), "board_id": rid, "status": "executing"} if rid else {},
                     "error": None if rid else "Failed to save reminder"
                 }
                 ws.send(json.dumps(resp))
                 if rid:
-                    log.info(f"Response sent for reminder #{rid} (Section 3.6)")
+                    log.info(f"Response sent for reminder #{rid} status=executing")
 
     def on_error(self, ws, error):
         log.error(f"WS error: {error}")
@@ -98,6 +158,10 @@ class BoardWSClient:
     def run(self):
         import websocket
         self.running = True
+        # Start polling thread
+        poll_thread = threading.Thread(target=self._poll_status_changes, daemon=True)
+        poll_thread.start()
+        log.info("Status poller started")
         while self.running:
             try:
                 url = f"{SERVER_WS}/api/v1/aipet/ws/{SERIAL}"

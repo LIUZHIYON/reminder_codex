@@ -606,3 +606,32 @@ body {
   background: #b2bec3 !important;
   color: #2d3436 !important;
 }
+/* Status badges */
+.status-badge.delayed {
+  background: #ffeaa7 !important;
+  color: #856404 !important;
+}
+.status-badge.timeout, .status-badge.failed {
+  background: #fd79a8 !important;
+  color: #6c1f2e !important;
+}
+.status-badge.missed, .status-badge.cancelled {
+  background: #b2bec3 !important;
+  color: #2d3436 !important;
+}
+.status-badge.completed, .status-badge.played, .status-badge.triggered {
+  background: #55efc4 !important;
+  color: #006266 !important;
+}
+.status-badge.sent, .status-badge.received {
+  background: #74b9ff !important;
+  color: #0747a6 !important;
+}
+.status-badge.executing {
+  background: #ffeaa7 !important;
+  color: #856404 !important;
+}
+.status-badge.pending {
+  background: #dfe6e9 !important;
+  color: #636e72 !important;
+}

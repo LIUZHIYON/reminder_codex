@@ -1,4 +1,4 @@
-﻿const API_BASE = "/api/reminders";
+const API_BASE = "/api/reminders";
 
 // ========== State ==========
 let reminders = [];
@@ -90,6 +90,7 @@ function renderReminders() {
           <div class="title">${escapeHtml(r.title)}</div>
           ${r.description ? `<div class="desc">${escapeHtml(r.description)}</div>` : ""}
           ${repeatLabel ? `<div class="repeat-info">🔄 ${repeatLabel}</div>` : ""}
+          ${r.created_at ? `<div class="desc">创建: ${formatDate(r.created_at).full}</div>` : ""}
         </div>
         <span class="status-badge ${r.status}">${getStatusLabel(r.status)}</span>
         <div class="actions">
@@ -287,7 +288,7 @@ async function loadBoardStatus() {
     updateBoardStatusUI(data);
   } catch (e) {
     boardOnline = false;
-    document.getElementById("boardStatusText").textContent = "\u79bb\u7ebf";
+    document.getElementById("boardStatusText").textContent = "离线";
     document.getElementById("boardStatusDot").className = "board-status-dot off";
     document.getElementById("boardReminderCount").textContent = "";
   }
@@ -299,11 +300,11 @@ function updateBoardStatusUI(data) {
   const count = document.getElementById("boardReminderCount");
   if (data.online) {
     dot.className = "board-status-dot on";
-    text.textContent = "\u5728\u7ebf (" + data.host + ")";
-    count.textContent = "\u5df2\u6536\u5230 " + (data.reminder_count || 0) + " \u6761\u63d0\u9192";
+    text.textContent = "在线 (" + data.host + ")";
+    count.textContent = "已收到 " + (data.reminder_count || 0) + " 条提醒";
   } else {
     dot.className = "board-status-dot off";
-    text.textContent = "\u79bb\u7ebf";
+    text.textContent = "离线";
     count.textContent = "";
   }
 }
@@ -319,10 +320,27 @@ async function loadBoardReminders() {
   }
 }
 
+function getBoardStatusLabel(status) {
+  var labels = {
+    "pending": "⏳ 待下发",
+    "sent": "📨 已下发",
+    "executing": "🔄 执行中",
+    "completed": "✅ 已完成",
+    "failed": "❌ 失败",
+    "cancelled": "🚫 已取消",
+    "received": "✅ 已接收",
+    "delayed": "🔄 执行中",
+    "timeout": "❌ 失败",
+    "played": "✅ 已完成",
+    "triggered": "✅ 已完成"
+  };
+  return labels[status] || status;
+}
+
 function renderBoardReminders() {
   const grid = document.getElementById("boardReminderGrid");
   if (!boardReminders || boardReminders.length === 0) {
-    grid.innerHTML = '<div class="empty-state"><div class="big-icon">🖥️</div><h2>\u677f\u5b50\u63d0\u9192</h2><p>\u677f\u5b50\u4e0a\u66ab\u65e0\u63d0\u9192\u4e8b\u9879</p></div>';
+    grid.innerHTML = '<div class="empty-state"><div class="big-icon">🖥️</div><h2>板子提醒</h2><p>板子上暂无提醒事项</p></div>';
     return;
   }
   let html = "";
@@ -336,12 +354,12 @@ function renderBoardReminders() {
     html += '<div class="reminder-card">';
     html += '<div class="time-block"><div class="time">' + (time.split(" ")[1] || time) + '</div><div class="date">' + (time.split(" ")[0] || "") + '</div></div>';
     html += '<div class="content"><div class="title">' + escapeHtml(title) + '</div>';
-    html += '<div class="desc">\u6536\u5230\u65f6\u95f4: ' + recv + '</div>';
-    html += '<div class="desc file-path">\u6587\u4ef6\u4f4d\u7f6e: ' + escapeHtml(fpath || "\u672a\u77e5") + '</div></div>';
+    html += '<div class="desc">收到时间: ' + recv + '</div>';
+    html += '<div class="desc file-path">文件位置: ' + escapeHtml(fpath || "未知") + '</div></div>';
     html += '<span class="status-badge ' + status + '">' + getBoardStatusLabel(status) + '</span>';
     html += '<div class="actions">';
-    html += '<button class="btn-icon play-btn" onclick="playBoardReminder(\x27' + cid + '\x27)" title="\u8bd5\u542c">🔊</button>';
-    html += '<button class="btn-icon delete-btn" onclick="deleteBoardReminder(\x27' + cid + '\x27)" title="\u5220\u9664">🗑️</button>';
+    html += '<button class="btn-icon play-btn" onclick="playBoardReminder(\x27' + cid + '\x27)" title="试听">🔊</button>';
+    html += '<button class="btn-icon delete-btn" onclick="deleteBoardReminder(\x27' + cid + '\x27)" title="删除">🗑️</button>';
     html += '</div></div>';
   }
   grid.innerHTML = html;
@@ -354,26 +372,27 @@ async function playBoardReminder(cmdId) {
     const resp = await fetch(BOARD_API + "/" + cmdId + "/play", { method: "POST" });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      alert("\u64ad\u653e\u5931\u8d25: " + (err.detail || ""));
+      alert("播放失败: " + (err.detail || ""));
     }
     setTimeout(function() { document.getElementById("nowPlaying").classList.remove("active"); }, 5000);
   } catch (e) {
-    alert("\u64ad\u653e\u5931\u8d25: " + e.message);
+    alert("播放失败: " + e.message);
     document.getElementById("nowPlaying").classList.remove("active");
   }
 }
 
 async function deleteBoardReminder(cmdId) {
-  if (!cmdId || !confirm("\u786e\u5b9a\u8981\u5220\u9664\u8fd9\u4e2a\u63d0\u9192\u5417\uff1f")) return;
+  if (!cmdId || !confirm("确定要删除这个提醒吗？")) return;
   try {
     const resp = await fetch(BOARD_API + "/" + cmdId, { method: "DELETE" });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     await loadBoardReminders();
     await loadBoardStatus();
   } catch (e) {
-    alert("\u5220\u9664\u5931\u8d25: " + e.message);
+    alert("删除失败: " + e.message);
   }
 }
+
 // Clock
 function updateClock() {
   var n = new Date();
@@ -387,6 +406,7 @@ function updateClock() {
 }
 setInterval(updateClock, 1000);
 updateClock();
+
 // Presence
 async function loadBoardPresence() {
   try {
@@ -399,10 +419,10 @@ function updatePresenceUI(present) {
   var btn = document.getElementById("presenceToggle");
   if (!btn) return;
   if (present) {
-    btn.textContent = "\uD83D\uDC64 \u6709\u4EBA";
+    btn.textContent = "👤 有人";
     btn.className = "presence-toggle on";
   } else {
-    btn.textContent = "\uD83D\uDEAB \u6CA1\u4EBA";
+    btn.textContent = "🚫 没人";
     btn.className = "presence-toggle off";
   }
 }
@@ -416,20 +436,4 @@ async function togglePresence() {
       body: JSON.stringify({present: isPresent}) });
     updatePresenceUI(isPresent);
   } catch(e) {}
-}
-function getBoardStatusLabel(status) {
-  var labels = {
-    "pending": "\u23F3 \u5F85\u4E0B\u53D1",
-    "sent": "\uD83D\uDCE8 \u5DF2\u4E0B\u53D1",
-    "executing": "\uD83D\uDD04 \u6267\u884C\u4E2D",
-    "completed": "\u2705 \u5DF2\u5B8C\u6210",
-    "failed": "\u274C \u5931\u8D25",
-    "cancelled": "\uD83D\uDEAB \u5DF2\u53D6\u6D88",
-    "received": "\u2705 \u5DF2\u63A5\u6536",
-    "delayed": "\uD83D\uDD07 \u5EF6\u65F6\u4E2D",
-    "timeout": "\u23F0 \u5DF2\u8D85\u65F6",
-    "played": "\u2705 \u5DF2\u64AD\u653E",
-    "triggered": "\u2705 \u5DF2\u64AD\u653E"
-  };
-  return labels[status] || status;
 }
