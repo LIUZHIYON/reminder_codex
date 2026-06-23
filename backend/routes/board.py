@@ -172,7 +172,7 @@ async def list_board_reminders():
                 k = str(item.get("id", ""))
                 if k in old_map:
                     o = old_map[k]
-                    if o.get("status") in ("played", "timeout", "missed"):
+                    if o.get("status") in ("played", "timeout", "missed", "delayed"):
                         item["status"] = o["status"]
                         item["audio_file"] = o.get("audio_file", item.get("audio_file", ""))
             _save_cache(data)

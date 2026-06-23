@@ -67,11 +67,6 @@ def process_reminders():
             changed = True
             print(f"[Presence] Delayed: {title} #{dc+1}")
             continue
-        if now - rtd > timedelta(minutes=5):
-            r["status"] = "missed"
-            changed = True
-            print(f"[Presence] Missed: {title}")
-            continue
         aid = abs(hash(title + rt)) % 100000
         try:
             from services.tts import generate_audio_sync as _gen

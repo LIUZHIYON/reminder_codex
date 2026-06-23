@@ -425,7 +425,7 @@ function getBoardStatusLabel(status) {
     "timeout": "\u23F0 \u5DF2\u8D85\u65F6",
     "played": "\u2705 \u5DF2\u64AD\u653E",
     "triggered": "\u2705 \u5DF2\u64AD\u653E",
-    "missed": "\u23ED\uFE0F \u5DF2\u9519\u8FC7"
+    "missed": "\u23F0 \u5DF2\u8D85\u65F6"
   };
   return labels[status] || status;
 }
