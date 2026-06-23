@@ -1,4 +1,4 @@
-﻿import sys, json, time, threading, os, http.client
+﻿import json, time, threading, os, sys
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
 def _rq_no_proxy_get(u, **k): k["proxies"] = {"http":None,"https":None}; return _rq_orig_get(u, **k)
@@ -16,7 +16,7 @@ API = "http://47.118.26.156:8000/api/v1"
 SERIAL = "6976f96f-bc80-56e3-9b27-13d12cdde9d3"
 PORT = 8001
 
-_utoken = [""]; _ws = [None]
+_utoken = [""]; _ws = [None]; _reminders = []
 
 def log(m): print(f"[{time.strftime('%H:%M:%S')}] {m}")
 
@@ -24,7 +24,9 @@ def refresh():
     try:
         r = rq.get(f"{API}/aipet/app/auth/13800138000/888888", timeout=10)
         d = r.json()
-        if d.get("success"): _utoken[0] = d.get("data",""); return True
+        if d.get("success"):
+            _utoken[0] = d.get("data","")
+            return True
     except Exception as e: log(f"Auth error: {e}")
     _utoken[0] = ""; return False
 
@@ -62,23 +64,33 @@ def on_msg(msg):
     elif t == "server_command":
         cmd = msg.get("command",""); cid = msg.get("command_id","")
         if cmd == "reminder":
-            rd = msg.get("reminder_data") or msg.get("commandParams") or {}
-            title = rd.get("title","") or rd.get("content","") or msg.get("title","") or msg.get("content","")
+            rd = msg.get("command_params",{}).get("reminder_data",{})
+            title = rd.get("title","") or msg.get("content","")
             content = rd.get("content","") or title
-            rtime = rd.get("reminder_time","") or rd.get("reminderTime","") or msg.get("reminder_time","")
+            rtime = rd.get("reminder_time","") or rd.get("reminderTime","")
             log(f"REMINDER: {title}")
-            # Forward to board via Flask API (not SSH)
+            rec = {"command_id":cid,"title":title,"content":content,"reminder_time":rtime,
+                   "status":"received","received_at":time.strftime("%Y-%m-%dT%H:%M:%S")}
+            _reminders.insert(0, rec)
             try:
-                _body = json.dumps({"content":content,"reminder_time":rtime}, ensure_ascii=False).encode("utf-8")
-                _conn = http.client.HTTPConnection("192.168.1.64", 5000, timeout=3)
-                _conn.request("POST", "/api/reminders/create", _body, {"Content-Type": "application/json"})
-                _resp = _conn.getresponse()
-                _resp.read()
-                _conn.close()
-            except Exception as e:
-                log(f"Board Flask error: {e}")
+                fp = os.path.join(os.path.dirname(__file__),"reminders.json")
+                with open(fp,"w",encoding="utf-8") as f: json.dump(_reminders[:50],f,ensure_ascii=False)
+            except: pass
+            # Push to board Flask + 8000 cache
+            try:
+                import http.client
+                _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
+                _conn = http.client.HTTPConnection("192.168.1.64",5000,timeout=3)
+                _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
+                _conn.getresponse().read(); _conn.close()
+            except: pass
+            try:
+                rq.post("http://127.0.0.1:8000/api/board-reminders/sync",
+                    json={"title":title,"reminder_time":rtime,"content":title},timeout=2)
+            except: pass
             if _ws[0]:
-                _ws[0].send(json.dumps({"type":"command_response","command_id":cid,"command":cmd,"status":"success"}))
+                _ws[0].send(json.dumps({"type":"command_response","command_id":cid,
+                    "command":cmd,"status":"success","result":{"received":True}}))
 
 threading.Thread(target=ws_run, daemon=True).start()
 
@@ -91,7 +103,11 @@ async def startup():
 
 @app.get("/api/status")
 def st():
-    return JSONResponse({"online":bool(_utoken[0]), "pet_id":get_pid()})
+    return JSONResponse({"online":bool(_utoken[0]),"pet_id":get_pid(),"reminders":len(_reminders)})
+
+@app.get("/api/reminders")
+def reminders():
+    return JSONResponse(_reminders)
 
 @app.post("/api/send-reminder")
 def send(data: dict):
@@ -100,28 +116,38 @@ def send(data: dict):
     if not refresh(): raise HTTPException(500,"Login failed")
     pid = get_pid()
     if not pid: raise HTTPException(500,"No device")
-    payload = {"sessionId":"mgmt_"+str(int(time.time())), "messageType":"command", "commandType":"reminder",
-               "content":title, "commandParams":{"reminder_data":{"title":title, "content":content, "reminder_time":rtime, "repeat_type":data.get("repeat_type","")}}}
-    r = rq.post(f"{API}/aipet/app/chatWith/{pid}", headers={"Authorization":f"Bearer {_utoken[0]}", "Content-Type":"application/json"}, json=payload, timeout=10)
+    # NEW PROTOCOL: Step 1 - Create reminder via Section 22.3
+    create_payload = {"title":title,"content":content,"reminderTime":rtime,"repeatType":data.get("repeat_type","none")}
+    r = rq.post(f"{API}/aipet/app/reminders/{pid}", headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
+                json=create_payload, timeout=10)
     result = r.json()
-    if result.get("success"):
-        # Direct POST to board Flask API (bypass proxy with http.client)
-        try:
-            _body = json.dumps({"content":title,"reminder_time":rtime}, ensure_ascii=False).encode("utf-8")
-            _conn = http.client.HTTPConnection("192.168.1.64", 5000, timeout=3)
-            _conn.request("POST", "/api/reminders/create", _body, {"Content-Type": "application/json"})
-            _resp = _conn.getresponse()
-            _resp.read()
-            _conn.close()
-        except Exception as e:
-            log(f"Board direct POST error: {e}")
-        return JSONResponse({"success":True})
-    raise HTTPException(500, result.get("msg","Failed"))
+    if not result.get("success"): raise HTTPException(500, result.get("msg","Failed"))
+    reminder_id = result.get("data",{}).get("id")
+    if not reminder_id: raise HTTPException(500,"No reminder_id in response")
+    # Step 2 - Send to device via Section 22.6
+    send_r = rq.post(f"{API}/aipet/app/reminders/send/{pid}/{reminder_id}",
+                     headers={"Authorization":f"Bearer {_utoken[0]}"}, timeout=10)
+    send_result = send_r.json()
+    log(f"Created reminder #{reminder_id}, send result: {send_result.get('msg','')}")
+    # Also direct POST to board Flask
+    try:
+        import http.client
+        _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
+        _conn = http.client.HTTPConnection("192.168.1.64",5000,timeout=3)
+        _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
+        _resp = _conn.getresponse(); _resp.read(); _conn.close()
+    except: pass
+    # Sync to local cache
+    try:
+        rq.post("http://127.0.0.1:8000/api/board-reminders/sync",
+            json={"title":title,"reminder_time":rtime,"content":title},timeout=2)
+    except: pass
+    return JSONResponse({"success":True,"reminder_id":reminder_id,"send_result":send_result.get("msg","")})
 
 @app.get("/")
 def index():
     try:
-        return HTMLResponse(open(os.path.join(os.path.dirname(__file__), "index.html"), encoding="utf-8").read())
+        return HTMLResponse(open(os.path.join(os.path.dirname(__file__),"index.html"),encoding="utf-8").read())
     except:
         return HTMLResponse("<h1>RM</h1>")
 
