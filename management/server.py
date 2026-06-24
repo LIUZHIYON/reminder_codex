@@ -147,6 +147,12 @@ def send(data: dict):
         rq.post("http://127.0.0.1:8000/api/board-reminders/sync",
             json={"command_id":str(reminder_id),"title":title,"reminder_time":rtime,"content":title},timeout=2)
     except: pass
+    # Explicitly set remote server status to "sent" (Section 22.4 PUT)
+    try:
+        rq.put(f"{API}/aipet/app/reminders/{reminder_id}",
+               headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
+               json={"status":"sent"}, timeout=5)
+    except: pass
     
     return JSONResponse({"success":True,"reminder_id":reminder_id,"send_result":send_result.get("msg","")})
 
