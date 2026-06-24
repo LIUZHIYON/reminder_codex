@@ -176,6 +176,34 @@ def update_remote_status(data: dict):
         log(f"Remote status update error: {e}")
         raise HTTPException(500, str(e))
 
+@app.post("/api/cancel-remote-reminder")
+def cancel_remote_reminder(data: dict):
+    """Cancel a reminder: mark as cancelled on server + board (only for unplayed reminders)."""
+    rid = data.get("reminder_id")
+    title = data.get("title", "")
+    rtime = data.get("reminder_time", "")
+    if not rid:
+        raise HTTPException(400, "reminder_id required")
+    if not refresh():
+        raise HTTPException(500, "Login failed")
+    try:
+        # PUT status=cancelled on remote server (Section 22.4)
+        r = rq.put(f"{API}/aipet/app/reminders/{rid}",
+                   headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
+                   json={"status":"cancelled"}, timeout=10)
+        result = r.json()
+        log(f"Cancel #{rid}: {result.get('msg','')}")
+        # Sync to board via 8000 cache + SSH
+        try:
+            rq.post("http://127.0.0.1:8000/api/board-reminders/status-update",
+                json={"command_id": str(rid), "status": "cancelled", "content": title, "reminder_time": rtime}, timeout=3)
+        except:
+            pass
+        return JSONResponse({"success": result.get("success", False), "msg": result.get("msg","")})
+    except Exception as e:
+        log(f"Cancel error: {e}")
+        raise HTTPException(500, str(e))
+
 @app.post("/api/delete-remote-reminder")
 def delete_remote_reminder(data: dict):
     """Delete reminder from remote server (Section 22.5) and sync cancellation to board."""
@@ -198,6 +226,33 @@ def delete_remote_reminder(data: dict):
         return JSONResponse({"success": result.get("success", False), "msg": result.get("msg","")})
     except Exception as e:
         log(f"Remote delete error: {e}")
+        raise HTTPException(500, str(e))
+
+@app.post("/api/delete-remote-reminder-record")
+def delete_remote_reminder_record(data: dict):
+    """Permanently delete a reminder from server AND board SQLite."""
+    rid = data.get("reminder_id")
+    title = data.get("title", "")
+    rtime = data.get("reminder_time", "")
+    if not rid:
+        raise HTTPException(400, "reminder_id required")
+    if not refresh():
+        raise HTTPException(500, "Login failed")
+    try:
+        # DELETE from remote server (Section 22.5 - soft delete)
+        r = rq.delete(f"{API}/aipet/app/reminders/{rid}",
+                      headers={"Authorization":f"Bearer {_utoken[0]}"}, timeout=10)
+        result = r.json()
+        log(f"Remote delete #{rid}: {result.get('msg','')}")
+        # Delete from board SQLite via 8000
+        try:
+            rq.post("http://127.0.0.1:8000/api/board-reminders/delete-record",
+                json={"command_id": str(rid), "content": title, "reminder_time": rtime}, timeout=3)
+        except:
+            pass
+        return JSONResponse({"success": result.get("success", False), "msg": result.get("msg","")})
+    except Exception as e:
+        log(f"Delete error: {e}")
         raise HTTPException(500, str(e))
 
 @app.get("/api/remote-reminders")

@@ -119,6 +119,43 @@ def _ssh_update_reminder(command_id, new_status):
         print("SSH update failed:", e)
         return False
 
+def _ssh_delete_reminder(content, reminder_time):
+    """Delete reminder from board SQLite via SSH matching content+time."""
+    safe_c = content.replace("'", "\\'")
+    safe_t = reminder_time.replace("'", "\\'")
+    py_code = (
+        "import sqlite3\n"
+        "conn=sqlite3.connect('" + BOARD_DB_PATH + "')\n"
+        "c=conn.cursor()\n"
+        "c.execute(\"DELETE FROM reminders WHERE content=? AND reminder_time=?\", ('" + safe_c + "','" + safe_t + "'))\n"
+        "affected=c.rowcount\n"
+        "if affected==0:\n"
+        "    c.execute(\"DELETE FROM reminders WHERE reminder_time=?\", ('" + safe_t + "',))\n"
+        "conn.commit()\n"
+        "conn.close()\n"
+        "print(affected if affected>0 else 0)\n"
+    )
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
+        sftp = client.open_sftp()
+        remote_path = "/tmp/_del_reminder.py"
+        with sftp.open(remote_path, "w") as f:
+            f.write(py_code)
+        sftp.close()
+        _, stdout, stderr = client.exec_command("python3 " + remote_path)
+        out = stdout.read().decode()
+        err = stderr.read().decode()[:500]
+        client.exec_command("rm -f " + remote_path)
+        client.close()
+        if err:
+            print("SSH delete stderr:", err)
+        return out.strip()
+    except Exception as e:
+        print("SSH delete failed:", e)
+        return "0"
+
 class BoardReminderSync(BaseModel):
     command_id: str = ""
     title: str
@@ -168,6 +205,9 @@ async def status_update(data: dict):
     new_status = data.get("status", "")
     if not command_id or not new_status:
         raise HTTPException(400, "command_id and status required")
+    content = data.get("content", "")
+    reminder_time = data.get("reminder_time", "")
+    # Update cache by command_id (try both cache and board SQLite)
     records = _load_cache()
     for r in records:
         if r.get("command_id") == command_id:
@@ -175,8 +215,21 @@ async def status_update(data: dict):
             r["status_updated_at"] = datetime.now().isoformat()
             break
     _save_cache(records)
-    ssh_ok = _ssh_update_reminder(command_id, new_status)
+    ssh_ok = _ssh_update_reminder(command_id, new_status, content, reminder_time)
     return {"success": True, "ssh_sync": ssh_ok}
+
+@router.post("/delete-record")
+async def delete_board_record(data: dict):
+    """Delete a reminder from board SQLite by content+reminder_time."""
+    content_text = data.get("content", "")
+    reminder_time = data.get("reminder_time", "")
+    if not content_text or not reminder_time:
+        raise HTTPException(400, "content and reminder_time required")
+    records = _load_cache()
+    records = [r for r in records if r.get("command_id") != data.get("command_id", "")]
+    _save_cache(records)
+    deleted = _ssh_delete_reminder(content_text, reminder_time)
+    return {"success": True, "deleted": deleted}
 
 @router.get("/presence")
 async def get_presence():

@@ -62,10 +62,19 @@ button:disabled{background:#b2bec3}
 
 <script>
 
-async function deleteRemoteReminder(id) {
-  if (!id || !confirm("确定要删除提醒 #" + id + " 吗？")) return;
+async function cancelRemoteReminder(id, title, rtime) {
+  if (!id || !confirm("确定取消提醒 #" + id + " 吗？取消后不会再播放")) return;
   try {
-    var r = await fetch("/api/delete-remote-reminder", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({reminder_id: id})});
+    var r = await fetch("/api/cancel-remote-reminder", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({reminder_id: id, title: title, reminder_time: rtime})});
+    var d = await r.json();
+    if (d.success) { loadRemoteReminders(); }
+    else { alert("取消失败: " + (d.detail || d.msg || "")); }
+  } catch(e) { alert("取消失败: " + e.message); }
+}
+async function deleteRemoteReminderRecord(id, title, rtime) {
+  if (!id || !confirm("确定删除提醒 #" + id + " 吗？这将从服务器和板子彻底删除")) return;
+  try {
+    var r = await fetch("/api/delete-remote-reminder-record", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({reminder_id: id, title: title, reminder_time: rtime})});
     var d = await r.json();
     if (d.success) { loadRemoteReminders(); }
     else { alert("删除失败: " + (d.detail || d.msg || "")); }
@@ -95,7 +104,7 @@ async function loadRemoteReminders() {
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(sm[r.status]||r.status||"")+"</td>";
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.repeatType||"-")+"</td>";
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.sentTime||"-")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.result?JSON.stringify(r.result).substring(0,30):(r.errorMessage||"-"))+"</td><td style='padding:4px;border:1px solid #ddd'><button onclick='deleteRemoteReminder("+(r.id||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white'>删除</button></td></tr>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.result?JSON.stringify(r.result).substring(0,30):(r.errorMessage||"-"))+"</td><td style='padding:4px;border:1px solid #ddd'><button onclick='cancelRemoteReminder("+(r.id||"")+","+(r.title||"")+","+(r.reminderTime||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white;margin-right:4px'>取消</button><button onclick='deleteRemoteReminderRecord("+(r.id||"")+","+(r.title||"")+","+(r.reminderTime||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white'>删除</button></td></tr>";
     }
     tbl += "</table>";
     list.innerHTML = tbl;
