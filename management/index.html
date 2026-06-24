@@ -65,6 +65,7 @@ button:disabled{background:#b2bec3}
 
 async function cancelRemoteReminder(id, title, rtime, curStatus) {
   if (!id) return;
+  id = decodeURIComponent(id); title = decodeURIComponent(title); rtime = decodeURIComponent(rtime); curStatus = decodeURIComponent(curStatus);
   var newStatus = (curStatus === "cancelled") ? "sent" : "cancelled";
   try {
     var r = await fetch("/api/cancel-remote-reminder", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({reminder_id: id, title: title, reminder_time: rtime, new_status: newStatus})});
@@ -73,14 +74,9 @@ async function cancelRemoteReminder(id, title, rtime, curStatus) {
     if (!d.success) { console.log("操作失败:", d.msg || d.detail); }
   } catch(e) { console.log("操作失败:", e.message); }
 }
-);
-    var d = await r.json();
-    if (d.success) { loadRemoteReminders(); }
-    else { alert("取消失败: " + (d.detail || d.msg || "")); }
-  } catch(e) { alert("取消失败: " + e.message); }
-}
 async function deleteRemoteReminderRecord(id, title, rtime) {
   if (!id) return;
+  id = decodeURIComponent(id); title = decodeURIComponent(title); rtime = decodeURIComponent(rtime);
   try {
     var r = await fetch("/api/delete-remote-reminder-record", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({reminder_id: id, title: title, reminder_time: rtime})});
     var d = await r.json();
@@ -88,42 +84,47 @@ async function deleteRemoteReminderRecord(id, title, rtime) {
     if (!d.success) { console.log("删除失败:", d.msg || d.detail); }
   } catch(e) { console.log("删除失败:", e.message); }
 }
-);
-    var d = await r.json();
-    if (d.success) { loadRemoteReminders(); }
-    else { alert("删除失败: " + (d.detail || d.msg || "")); }
-  } catch(e) { alert("删除失败: " + e.message); }
-}
 
 async function loadRemoteReminders() {
-  var list = document.getElementById("remoteList");
-  list.innerHTML = "Loading...";
+  var lst = document.getElementById("remoteList");
+  lst.innerHTML = "<p style='text-align:center;padding:20px'>Loading...</p>";
   try {
-    var r = await fetch("/api/remote-reminders");
-    var data = await r.json();
-    var rows = data.rows || data || [];
-    if (!rows.length) { list.innerHTML = "<p style=\'text-align:center;padding:20px;color:#888\'>No reminders</p>"; return; }
-    var tbl = "<table style=\'width:100%;border-collapse:collapse;font-size:12px\'>";
-    tbl += "<tr style=\'background:#f0f0f0\'>";
-    tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>ID</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Title</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Content</th>";
-    tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Time</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Status</th>";
-    tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Repeat</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Sent</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Result</th></tr>";
+    var resp = await fetch("/api/remote-reminders");
+    if (!resp.ok) { lst.innerHTML = "<p style='color:red;text-align:center;padding:20px'>Error: " + resp.status + "</p>"; return; }
+    var data = await resp.json();
+    var rows = Array.isArray(data.rows) ? data.rows : [];
+    if (!rows.length) { lst.innerHTML = "<p style='text-align:center;padding:20px;color:#888'>No reminders</p>"; return; }
     var sm = {pending:"pending",sent:"sent",executing:"executing",completed:"completed",failed:"failed",cancelled:"cancelled"};
-    for (var i=0;i<rows.length;i++) {
-      var r=rows[i];
-      tbl += "<tr><td style=\'padding:4px;border:1px solid #ddd\'>"+(r.id||"")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.title||"")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.content||"")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.reminderTime||"")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(sm[r.status]||r.status||"")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.repeatType||"-")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.sentTime||"-")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.result?JSON.stringify(r.result).substring(0,30):(r.errorMessage||"-"))+"</td><td style='padding:4px;border:1px solid #ddd'><button onclick='cancelRemoteReminder("+(r.id||"")+","+(r.title||"")+","+(r.reminderTime||"")+","+(r.status||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white;margin-right:8px'>"+(r.status==="cancelled"?"恢复":"取消")+"</button><button onclick='deleteRemoteReminderRecord("+(r.id||"")+","+(r.title||"")+","+(r.reminderTime||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white'>删除</button></td></tr>";
+    var h = "<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse;font-size:12px'>";
+    h += "<tr style='background:#f0f0f0'>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>ID</th>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>Title</th>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>Content</th>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>Time</th>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>Status</th>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>Repeat</th>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>Sent</th>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>Result</th>";
+    h += "<th style='padding:6px;border:1px solid #ddd;text-align:left'>Actions</th></tr>";
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      h += "<tr>";
+      h += "<td style='padding:4px;border:1px solid #ddd'>" + (r.id || "") + "</td>";
+      h += "<td style='padding:4px;border:1px solid #ddd'>" + (r.title || "") + "</td>";
+      h += "<td style='padding:4px;border:1px solid #ddd'>" + (r.content || "") + "</td>";
+      h += "<td style='padding:4px;border:1px solid #ddd'>" + (r.reminderTime || "") + "</td>";
+      h += "<td style='padding:4px;border:1px solid #ddd'>" + (sm[r.status] || r.status || "") + "</td>";
+      h += "<td style='padding:4px;border:1px solid #ddd'>" + (r.repeatType || "-") + "</td>";
+      h += "<td style='padding:4px;border:1px solid #ddd'>" + (r.sentTime || "-") + "</td>";
+      h += "<td style='padding:4px;border:1px solid #ddd'>" + (r.result ? JSON.stringify(r.result).substring(0, 30) : (r.errorMessage || "-")) + "</td>";
+      h += "<td style='padding:4px;border:1px solid #ddd' nowrap>";
+      h += "<button class='remote-cancel' data-id='" + encodeURIComponent(String(r.id||"")) + "' data-title='" + encodeURIComponent(String(r.title||"")) + "' data-time='" + encodeURIComponent(String(r.reminderTime||"")) + "' data-status='" + encodeURIComponent(String(r.status||"")) + "' style='padding:2px 6px;font-size:11px;background:#d63031;color:white;margin-right:4px'>" + (r.status==="cancelled"?"恢复":"取消") + "</button>";
+      h += "<button class='remote-delete' data-id='" + encodeURIComponent(String(r.id||"")) + "' data-title='" + encodeURIComponent(String(r.title||"")) + "' data-time='" + encodeURIComponent(String(r.reminderTime||"")) + "' style='padding:2px 6px;font-size:11px;background:#636e72;color:white'>删除</button></td></tr>";
     }
-    tbl += "</table>";
-    list.innerHTML = tbl;
-  } catch(e) {
-    list.innerHTML = "<span style=\'color:red\'>Error: "+e.message+"</span>";
+    h += "</table></div>";
+    lst.innerHTML = h;
+  } catch (e) {
+    lst.innerHTML = "<p style='color:red;text-align:center;padding:20px'>JS Error: " + (e.message || e) + "</p>";
   }
 }
 </script>
@@ -173,6 +174,23 @@ async function doSend(){
   btn.disabled=false;btn.textContent="发送提醒";
 }
 refresh();setInterval(refresh,3000);
+// Event delegation for remote reminders buttons
+document.addEventListener("click", function(e) {
+  var el = e.target;
+  if (el.classList.contains("remote-cancel")) {
+    var id = el.getAttribute("data-id");
+    var title = el.getAttribute("data-title");
+    var time = el.getAttribute("data-time");
+    var status = el.getAttribute("data-status");
+    if (id) cancelRemoteReminder(id, title, time, status);
+  }
+  if (el.classList.contains("remote-delete")) {
+    var id = el.getAttribute("data-id");
+    var title = el.getAttribute("data-title");
+    var time = el.getAttribute("data-time");
+    if (id) deleteRemoteReminderRecord(id, title, time);
+  }
+});
 </script>
 </body>
 </html>
