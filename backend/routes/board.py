@@ -219,11 +219,18 @@ async def status_update(data: dict):
     reminder_time = data.get("reminder_time", "")
     # Update cache immediately
     records = _load_cache()
+    updated = False
     for r in records:
         if r.get("command_id") == command_id:
             r["status"] = new_status
             r["status_updated_at"] = datetime.now().isoformat()
+            updated = True
             break
+    if reminder_time:
+        for r in records:
+            if r.get("reminder_time") == reminder_time and r.get("status") != new_status:
+                r["status"] = new_status
+                r["status_updated_at"] = datetime.now().isoformat()
     _save_cache(records)
     # SSH in background - don't block the server
     loop = asyncio.get_event_loop()
@@ -320,7 +327,13 @@ def _list_board_from_ssh():
                 if o.get("status") in ("completed", "failed", "executing", "cancelled"):
                     item["status"] = o["status"]
             for o in old_cache:
-                if o.get("command_id") and (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")) and o.get("reminder_time") == item.get("reminder_time"):
+                matched = False
+                if o.get("reminder_time") and item.get("reminder_time") and o.get("reminder_time") == item.get("reminder_time"):
+                    if o.get("command_id") and (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")):
+                        matched = True
+                    elif o.get("status") in ("completed", "failed", "executing", "cancelled", "sent"):
+                        matched = True
+                if matched:
                     item["status"] = o.get("status", item.get("status", "received"))
                     if o.get("command_id"):
                         item["command_id"] = o["command_id"]
