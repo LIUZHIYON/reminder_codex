@@ -1,9 +1,9 @@
 ﻿# 叮叮提醒 (DingDing Reminder)
-
+```
 一个基于 Web 的提醒管理工具，支持**到点自动播放语音提醒 + 板子协同工作**。支持本地 Windows 运行，通过 AI Pet 远程服务器与 RK3576 板子通信。
-
+```
 ## 功能特性
-
+```
 - **📝 提醒管理** — 新增、编辑、删除提醒（完整 CRUD）
 - **🔊 中文语音播放** — PowerShell TTS / edge-tts 中文女声
 - **🔄 重复提醒** — 支持每天、每周、每月重复
@@ -15,10 +15,9 @@
 - **🕐 实时时钟** — 页面顶部显示当前时间
 - **👤 有人/没人检测** — 提醒到点时检测无人则延时，超 1 小时标记失败
 - **🎯 六种状态标签** — ⏳待下发 / 📨已下发 / 🔄执行中 / ✅已完成 / ❌失败 / 🚫已取消
-
+```
 ## 系统架构
-
-`
+```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        电脑端                                     │
 │                                                                  │
@@ -51,64 +50,59 @@
 │                        │  audio/                   │                │
 │                        └──────────────────────────┘                │
 └──────────────────────────────────────────────────────────────────┘
-`
-
+```
 ### 通信链路
-
+```
 **发送提醒：**
-`
 8001 Web → Section 22.3 POST /reminders/{pid} (创建) 
           → Section 22.6 POST /reminders/send/{pid}/{id} (下发)
           → 远程服务器 WS → 板子 board_ws_client → SQLite
           → 8001 同步到 8000 缓存 (/api/board-reminders/sync)
           缓存状态：板子在线 → sent / 板子离线 → pending
-`
-
+```
 **状态流转：**
-`
+```
 ⏳待下发(pending) ───→ 📨已下发(sent) ───→ 🔄执行中(executing)
                                               ├──→ ✅已完成(completed)  有人出现 + 播放
                                               └──→ ❌失败(failed)      1小时超时无人
                                                    ↕
                                               🚫已取消(cancelled)    远程删除
-`
-
+```
 **自动播报：**
-`
+```
 调度器(5秒) → process_reminders()
               ├── 还没到时间 → skip
               ├── 时间到 + 有人 → TTS生成 → 播放 → ✅已完成
               ├── 时间到 + 没人 → 🔄执行中(10min后重试)
               └── 1小时超时仍无人 → ❌失败
               状态变更后 → SSH同步板子 SQLite + 通知远程服务器(PUT)
-`
-
+```
 **板子回传状态：**
-`
+```
 board_ws_client 轮询线程(每10秒) → SQLite 查 status ∈ {completed,failed}
                                  → WS command_response → 远程服务器更新
-`
-
+```
 ## 快速启动
 
 ### 1. 安装依赖
 
-`ash
+```bash
 cd backend
 pip install -r requirements.txt
-`
+```
 
 ### 2. 启动服务
 
-`ash
+```bash
 # 终端1 - 8000 主界面 (本地提醒 + 板子提醒 + 自动播报)
 cd backend
 python main.py
+```
 
 # 终端2 - 8001 管理服务器 (发送提醒、远程提醒列表、删除)
 cd management
 python server.py
-`
+```
 
 ### 3. 打开浏览器
 
@@ -116,38 +110,37 @@ python server.py
 - **管理端（发送到板子）** → http://127.0.0.1:8001
 
 > ⚠️ 如有代理软件，请用 127.0.0.1 而非 localhost。
-
 ## 使用说明
-
+```
 ### 本地提醒 (8000)
 在「本地提醒」标签页中操作完整的增删改查。到点自动通过电脑喇叭播报。
-
+```
 ### 板子提醒 (8000)
 在「板子提醒」标签页中：
 - 查看板子在线状态，实时显示板子上的提醒
 - 👤 有人 / 🚫 没人开关：到点时检测此状态决定是否播报
 - 试听：点击 🔊 按钮 → TTS 合成 → 本地播放
 - 状态自动刷新（每 5 秒）
-
+```
 ### 发送提醒到板子 (8001)
 1. 输入标题、内容、时间
 2. 选择重复类型：不重复 / 每天 / 每周 / 每月
 3. 点击发送 → 通过远程服务器下发到板子
 4. 远程提醒列表实时查看服务器上的所有提醒
-
+```
 ### 删除功能 (8001)
 远程提醒列表每行有「删除」按钮 → 同步删除远程服务器 + 板子标记 🚫已取消
-
+```
 ## TTS 语音合成
-
+```
 | 优先级 | 后端 | 依赖 | 音色 |
 |--------|------|------|------|
 | 1️⃣ | **PowerShell TTS** | Windows + .NET | Microsoft Huihui Desktop |
 | 2️⃣ | pyttsx3 | Windows SAPI5 | 系统语音 |
 | 3️⃣ | edge-tts | 需要外网 | 卡通中文女声 Xiaoxiao |
-
+```
 ## 状态标签说明
-
+```
 | 状态 | 含义 | 触发条件 |
 |------|------|---------|
 | ⏳ 待下发 | 板子离线，提醒只在远程服务器上 | 同步时板子 SSH 不可达 |
@@ -156,10 +149,9 @@ python server.py
 | ✅ 已完成 | 播放完成 | 提醒时间到 + 有人 + 喇叭播报 |
 | ❌ 失败 | 超时无人 | 1 小时超时仍 🚫 没人 |
 | 🚫 已取消 | 远程删除 | 8001 页面点击删除 |
-
+```
 ## 项目结构
-
-`
+```
 reminder_codex/
 ├── README.md
 ├── .gitignore
@@ -200,10 +192,9 @@ reminder_codex/
 │   └── old/
 └── deploy/                    # 部署脚本
     └── deploy.sh
-`
-
+```
 ## API 接口
-
+```
 ### 本地提醒 (8000)
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -212,7 +203,7 @@ reminder_codex/
 | PUT | /api/reminders/{id} | 更新提醒 |
 | DELETE | /api/reminders/{id} | 删除提醒 |
 | POST | /api/reminders/{id}/test-play | 试听 |
-
+```
 ### 板子提醒 (8000)
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -224,7 +215,7 @@ reminder_codex/
 | POST | /api/board-reminders/status-update | 更新状态 + SSH 同步板子 |
 | DELETE | /api/board-reminders/{id} | 删除板子提醒 |
 | POST | /api/board-reminders/{id}/play | 播放(TTS或板子音频) |
-
+```
 ### 管理服务器 (8001)
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -234,50 +225,49 @@ reminder_codex/
 | GET | /api/remote-reminders | 远程服务器提醒列表(Section 22.1) |
 | POST | /api/update-remote-status | 更新远程状态(Section 22.4 PUT) |
 | POST | /api/delete-remote-reminder | 删除远程提醒(Section 22.5) |
-
+```
 ## 板子部署 (RK3576)
-
+```
 板子信息：192.168.1.226，用户 cat，密码 	emppwd
-
+```
 ### 已部署的服务
-
+```
 | 服务 | 文件 | 守护方式 | 功能 |
 |------|------|---------|------|
 | WS 客户端 | ~/reminder_system/board_ws_client.py | systemd oard-ws-client | 接收 + 状态上报 |
 | 提醒数据库 | ~/reminder_system/data/reminders.db | SQLite | 存储提醒 |
 | 音频文件 | ~/reminder_system/audio/ | 磁盘 | TTS 音频 |
-
+```
 ### 部署更新
-
+```
 `ash
 # 更新 board_ws_client.py
 python deploy/deploy.py
-
+```
 # 重启服务
 ssh cat@192.168.1.226 "sudo systemctl restart board-ws-client"
-`
-
+```
 ## 常见问题
-
+```
 ### 浏览器 502 / 无法访问
 代理软件拦截 localhost 请求。用 http://127.0.0.1:8000。
-
+```
 ### 没有声音
 检查 pygame 是否正常初始化，音频文件是否生成在 udio/ 目录下。
-
+```
 ### 提醒到时间了没有自动播放
 1. 检查后台是否有人/没人开关设为 🚫 没人（会进入延时）
 2. 8000 后端是否运行中（调度器每 5 秒检查一次）
 3. TTS 是否生成成功（查看 udio/ 目录下是否有 .mp3 文件）
-
+```
 ### 板子状态没更新
 板子离线时 8001 同步会显示 pending（⏳待下发）。板子上线后再次同步即可变为 sent（📨已下发）。
-
+```
 ### 8001 Remote Reminders 为空
 检查远程服务器连接是否正常，Token 是否有效（8001 会自动刷新）。
-
+```
 ## 技术栈
-
+```
 | 组件 | 选型 |
 |------|------|
 | 后端框架 | FastAPI + Uvicorn |
