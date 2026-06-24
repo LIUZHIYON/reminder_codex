@@ -105,7 +105,7 @@ async function loadRemoteReminders() {
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(sm[r.status]||r.status||"")+"</td>";
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.repeatType||"-")+"</td>";
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.sentTime||"-")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.result?JSON.stringify(r.result).substring(0,30):(r.errorMessage||"-"))+"</td><td style='padding:4px;border:1px solid #ddd'><button onclick='cancelRemoteReminder("+(r.id||"")+","+(r.title||"")+","+(r.reminderTime||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white;margin-right:4px'>取消</button><button onclick='deleteRemoteReminderRecord("+(r.id||"")+","+(r.title||"")+","+(r.reminderTime||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white'>删除</button></td></tr>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.result?JSON.stringify(r.result).substring(0,30):(r.errorMessage||"-"))+"</td><td style='padding:4px;border:1px solid #ddd'><button onclick='cancelRemoteReminder("+(r.id||"")+","+(r.title||"")+","+(r.reminderTime||"")+","+(r.status||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white;margin-right:4px'>取消</button><button onclick='deleteRemoteReminderRecord("+(r.id||"")+","+(r.title||"")+","+(r.reminderTime||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white'>删除</button></td></tr>";
     }
     tbl += "</table>";
     list.innerHTML = tbl;
