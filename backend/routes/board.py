@@ -327,10 +327,22 @@ async def list_board_reminders():
                         if o.get("command_id") and                            (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")) and                            o.get("reminder_time") == item.get("reminder_time"):
                             item["command_id"] = o["command_id"]
                             break
-            # Also preserve any old cache entries with command_id not yet in board SQLite
+            # Merge sync entry status into matching board SQLite entries (by content+time)
+            matched_sync_ids = set()
+            for item in data:
+                for o in old_cache:
+                    if o.get("command_id") and not o.get("id") and                        (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")) and                        o.get("reminder_time") == item.get("reminder_time"):
+                        sync_st = o.get("status", "")
+                        if sync_st in ("executing", "completed", "failed", "cancelled"):
+                            item["status"] = sync_st
+                        if o.get("command_id"):
+                            item["command_id"] = o["command_id"]
+                        matched_sync_ids.add(id(o))
+                        break
+            # Preserve sync entries not yet matched to any board record
             data_ids = {str(x.get("id", "")) for x in data}
             for o in old_cache:
-                if o.get("command_id") and str(o.get("id", "")) not in data_ids:
+                if o.get("command_id") and str(o.get("id", "")) not in data_ids and id(o) not in matched_sync_ids:
                     data.append(o)
             _save_cache(data)
             return data
