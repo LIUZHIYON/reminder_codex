@@ -100,7 +100,7 @@ def process_reminders():
     present = get_presence()
     for r in recs:
         s = r.get("status", "")
-        if s not in ("received", "pending", "executing"):
+        if s not in ("received", "pending", "sent", "executing"):
             continue
         rt = r.get("reminder_time", "")
         if not rt:

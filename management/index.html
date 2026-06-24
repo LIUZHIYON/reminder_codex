@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -61,6 +61,17 @@ button:disabled{background:#b2bec3}
 </div>
 
 <script>
+
+async function deleteRemoteReminder(id) {
+  if (!id || !confirm("确定要删除提醒 #" + id + " 吗？")) return;
+  try {
+    var r = await fetch("/api/delete-remote-reminder", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({reminder_id: id})});
+    var d = await r.json();
+    if (d.success) { loadRemoteReminders(); }
+    else { alert("删除失败: " + (d.detail || d.msg || "")); }
+  } catch(e) { alert("删除失败: " + e.message); }
+}
+
 async function loadRemoteReminders() {
   var list = document.getElementById("remoteList");
   list.innerHTML = "Loading...";
@@ -74,7 +85,7 @@ async function loadRemoteReminders() {
     tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>ID</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Title</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Content</th>";
     tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Time</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Status</th>";
     tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Repeat</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Sent</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Result</th></tr>";
-    var sm = {pending:"⏳待下发",sent:"📨已下发",executing:"🔄执行中",completed:"✅已完成",failed:"❌失败",cancelled:"🚫已取消"pending:"⏳待下发",sent:"📨已下发",executing:"🔄执行中",completed:"✅已完成",failed:"❌失败",cancelled:"🚫已取消"};
+    var sm = {pending:"⏳待下发",sent:"📨已下发",executing:"🔄执行中",completed:"✅已完成",failed:"❌失败",cancelled:"🚫已取消"};
     for (var i=0;i<rows.length;i++) {
       var r=rows[i];
       tbl += "<tr><td style=\'padding:4px;border:1px solid #ddd\'>"+(r.id||"")+"</td>";
@@ -84,7 +95,7 @@ async function loadRemoteReminders() {
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(sm[r.status]||r.status||"")+"</td>";
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.repeatType||"-")+"</td>";
       tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.sentTime||"-")+"</td>";
-      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.result?JSON.stringify(r.result).substring(0,30):(r.errorMessage||"-"))+"</td></tr>";
+      tbl += "<td style=\'padding:4px;border:1px solid #ddd\'>"+(r.result?JSON.stringify(r.result).substring(0,30):(r.errorMessage||"-"))+"</td><td style='padding:4px;border:1px solid #ddd'><button onclick='deleteRemoteReminder("+(r.id||"")+")' style='padding:2px 6px;font-size:11px;background:#d63031;color:white'>删除</button></td></tr>";
     }
     tbl += "</table>";
     list.innerHTML = tbl;

@@ -133,6 +133,9 @@ async def sync_board_reminder(data: BoardReminderSync):
     records = _load_cache()
     if data.command_id:
         records = [r for r in records if r.get("command_id") != data.command_id]
+    # Determine initial status based on board online
+    online = _check_online()
+    init_status = "sent" if online else "pending"
     rec = {
         "command_id": data.command_id,
         "title": data.title,
@@ -140,7 +143,7 @@ async def sync_board_reminder(data: BoardReminderSync):
         "reminder_time": data.reminder_time,
         "file_path": data.file_path,
         "received_at": data.received_at or datetime.now().isoformat(),
-        "status": data.status,
+        "status": init_status,
         "sync_at": datetime.now().isoformat(),
     }
     records.insert(0, rec)
@@ -212,6 +215,7 @@ async def board_status():
 async def list_board_reminders():
     q = "import sqlite3,json; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('PRAGMA table_info(reminders)'); cols=[r[1] for r in c.fetchall()]; c.execute('SELECT * FROM reminders ORDER BY id DESC LIMIT 50'); rows=c.fetchall(); print(json.dumps([dict(zip(cols,row)) for row in rows],ensure_ascii=False)); conn.close()"
     out, err = _ssh_exec_py(q)
+    online = _check_online()
     if out:
         try:
             data = json.loads(out)
@@ -236,12 +240,24 @@ async def list_board_reminders():
                         item["presence_delay_count"] = o.get("presence_delay_count", 0)
                         item["next_check"] = o.get("next_check", "")
                         item["timeout_minutes"] = o.get("timeout_minutes", 60)
+                    elif o.get("status") == "sent":
+                        item["status"] = "sent"
+                    elif o.get("status") == "pending":
+                        # Board offline, message not yet received by board
+                        item["status"] = "pending"
                 # Also check by command_id
                 ck = str(item.get("command_id", ""))
                 if ck and ck in old_map:
                     o = old_map[ck]
                     if o.get("status") in ("completed", "failed", "missed", "executing", "cancelled"):
                         item["status"] = o["status"]
+                    elif o.get("status") == "sent":
+                        item["status"] = "sent"
+            # Map SQLite "pending" -> "sent" (board has the reminder)
+            if online:
+                for item in data:
+                    if item.get("status") == "pending":
+                        item["status"] = "sent"
             _save_cache(data)
             return data
         except:
