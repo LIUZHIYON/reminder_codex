@@ -34,6 +34,7 @@ button:disabled{background:#b2bec3}
 <div class="info">序列号: <span class="code" id="serialDisplay"></span></div>
 <div class="info">状态: <span id="statusText" class="off">检测中...</span></div>
 <div class="info">已收提醒: <span id="reminderCount">0</span> 条</div>
+<div class="info">板子状态: <span id="boardStatusText" class="off">检测中...</span></div>
 </div>
 <div class="card">
 <h3>✉️ 发送提醒到设备</h3>
@@ -121,6 +122,12 @@ async function refresh(){
     let st=document.getElementById("statusText");
     st.textContent=d.online?"在线":"离线";
     st.className=d.online?"on":"off";
+  }catch(e){}
+  try{
+    let r=await fetch("/api/board-status");let d=await r.json();
+    let bs=document.getElementById("boardStatusText");
+    if(d.online){bs.textContent="在线";bs.className="on";}
+    else{bs.textContent="离线";bs.className="off";}
   }catch(e){}
   try{
     let r=await fetch("/api/reminders");let data=await r.json();

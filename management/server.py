@@ -173,25 +173,38 @@ def send(data: dict):
     # In new protocol, creation (Step 1) auto-sends to device.
     log(f"Created reminder #{reminder_id} (auto-send via new protocol)")
     
-    # Also direct POST to board Flask
-    try:
-        import http.client
-        _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
-        _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
-        _resp = _conn.getresponse(); _resp.read(); _conn.close()
-    except: pass
+
     
     # Sync to local cache with command_id = remote reminder_id
     try:
         rq.post("http://127.0.0.1:8000/api/board-reminders/sync",
             json={"command_id":str(reminder_id),"title":title,"reminder_time":rtime,"content":title},timeout=2)
     except: pass
-    # Explicitly set remote server status to "sent" (Section 22.4 PUT)
+    # Set remote server status based on board reachability
+    # If board is reachable (direct POST succeeded) -> sent, otherwise keep pending
+    board_online_via_post = False
+    try:
+        import http.client
+        _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
+        _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
+        _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
+        _resp = _conn.getresponse(); _resp.read(); _conn.close()
+        board_online_via_post = True
+    except: pass
+    # Also check via 8000 backend (if it responds)
+    if not board_online_via_post:
+        try:
+            _sr = rq.get("http://127.0.0.1:8000/api/board-reminders/status", timeout=5)
+            _sd = _sr.json()
+            if _sd.get("online"):
+                board_online_via_post = True
+        except: pass
+    desired_status = "sent" if board_online_via_post else "pending"
     try:
         rq.put(f"{API}/aipet/app/reminders/{reminder_id}",
                headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
-               json={"status":"sent"}, timeout=5)
+               json={"status":desired_status}, timeout=5)
+        log(f"Status #{reminder_id} -> {desired_status} (board_online={board_online_via_post})")
     except: pass
     
     return JSONResponse({"success":True,"reminder_id":reminder_id})
@@ -294,6 +307,21 @@ def delete_remote_reminder_record(data: dict):
     except Exception as e:
         log(f"Delete error: {e}")
         raise HTTPException(500, str(e))
+
+@app.get("/api/board-status")
+def board_status():
+    """Check board online status (fast check first)."""
+    result = {"online": False, "method": "none"}
+    # Method 1: direct board Flask (fast - 3s timeout)
+    try:
+        import http.client
+        _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
+        _conn.request("GET","/api/status")
+        _resp = _conn.getresponse(); _resp.read(); _conn.close()
+        if _resp.status == 200:
+            return JSONResponse({"online": True, "method": "direct_flask"})
+    except: pass
+    return JSONResponse(result)
 
 @app.get("/api/remote-reminders")
 def remote_reminders():
