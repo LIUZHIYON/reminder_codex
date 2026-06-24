@@ -72,7 +72,8 @@ async function cancelRemoteReminder(id, title, rtime, curStatus) {
     loadRemoteReminders();
     if (!d.success) { console.log("操作失败:", d.msg || d.detail); }
   } catch(e) { console.log("操作失败:", e.message); }
-}, body:JSON.stringify({reminder_id: id, title: title, reminder_time: rtime})});
+}
+);
     var d = await r.json();
     if (d.success) { loadRemoteReminders(); }
     else { alert("取消失败: " + (d.detail || d.msg || "")); }
@@ -86,7 +87,8 @@ async function deleteRemoteReminderRecord(id, title, rtime) {
     loadRemoteReminders();
     if (!d.success) { console.log("删除失败:", d.msg || d.detail); }
   } catch(e) { console.log("删除失败:", e.message); }
-}, body:JSON.stringify({reminder_id: id, title: title, reminder_time: rtime})});
+}
+);
     var d = await r.json();
     if (d.success) { loadRemoteReminders(); }
     else { alert("删除失败: " + (d.detail || d.msg || "")); }
