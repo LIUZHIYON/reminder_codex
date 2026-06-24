@@ -22,22 +22,39 @@ _utoken = [""]; _last_refresh = [0]; _ws = [None]; _reminders = []
 def log(m): print(f"[{time.strftime('%H:%M:%S')}] {m}")
 
 def refresh(force=False):
-    """Get auth token. Only actually logs in if token is empty or last refresh > 10 min old."""
+    """Get auth token. Validates cached token before returning it.
+    If validation fails, re-login. Retries login up to 2 times on failure.
+    """
     now = time.time()
     if not force and _utoken[0] and now - _last_refresh[0] < 600:
-        return True
-    try:
-        r = rq.get(f"{API}/aipet/app/auth/13800138000/888888", timeout=10)
-        d = r.json()
-        if d.get("success"):
-            _utoken[0] = d.get("data","")
-            _last_refresh[0] = now
+        # Fast path: use cached token (no validation needed within 5 min)
+        if now - _last_refresh[0] < 300:
             return True
-    except Exception as e: log(f"Auth error: {e}")
-    if not force:
-        if _utoken[0]:
-            log("Auth failed but token exists, trying to continue")
-            return True
+        # Slow path: validate cached token by checking myinfo endpoint
+        try:
+            r = rq.get(f"{API}/aipet/app/myinfo",
+                       headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=5)
+            if r.status_code == 200:
+                _last_refresh[0] = now  # extend cache
+                return True
+            log("Cached token invalid, re-login...")
+        except:
+            log("Token validation failed (network), re-login...")
+    # Re-login loop
+    for attempt in range(2):
+        try:
+            r = rq.get(f"{API}/aipet/app/auth/13800138000/888888", timeout=10)
+            d = r.json()
+            if d.get("success"):
+                _utoken[0] = d.get("data","")
+                _last_refresh[0] = time.time()
+                if attempt > 0:
+                    log(f"Login succeeded after {attempt+1} attempt(s)")
+                return True
+        except Exception as e:
+            log(f"Auth error (attempt {attempt+1}): {e}")
+        if attempt == 0:
+            time.sleep(1)
     _utoken[0] = ""; return False
 
 _cached_pid = [None]
