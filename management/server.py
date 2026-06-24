@@ -195,23 +195,19 @@ def send(data: dict):
     except: pass
     # Set remote server status based on board reachability
     # If board is reachable (direct POST succeeded) -> sent, otherwise keep pending
+    # Check board online via socket (avoids duplicate POST to board Flask)
     board_online_via_post = False
     try:
-        import http.client
-        _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.160",5000,timeout=3)
-        _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
-        _resp = _conn.getresponse(); _resp.read(); _conn.close()
-        board_online_via_post = True
-    except: pass
-    # Also check via 8000 backend (if it responds)
-    if not board_online_via_post:
+        import socket
+        _s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _s.settimeout(3)
         try:
-            _sr = rq.get("http://127.0.0.1:8000/api/board-reminders/status", timeout=5)
-            _sd = _sr.json()
-            if _sd.get("online"):
-                board_online_via_post = True
-        except: pass
+            _s.connect(("192.168.1.160", 5000))
+            _s.close()
+            board_online_via_post = True
+        except:
+            _s.close()
+    except: pass
     desired_status = "sent" if board_online_via_post else "pending"
     try:
         rq.put(f"{API}/aipet/app/reminders/{reminder_id}",
