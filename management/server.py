@@ -39,6 +39,27 @@ def get_pid():
         return pets[0].get("id") if pets else None
     except: return None
 
+def self_save_reminders():
+    try:
+        fp = os.path.join(os.path.dirname(__file__),"reminders.json")
+        with open(fp,"w",encoding="utf-8") as f: json.dump(_reminders[:50],f,ensure_ascii=False)
+    except: pass
+
+def _push_to_board(title, rtime):
+    try:
+        import http.client
+        _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
+        _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
+        _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
+        _conn.getresponse().read(); _conn.close()
+    except: pass
+
+def _sync_to_8000(cmd_id, title, rtime):
+    try:
+        rq.post("http://127.0.0.1:8000/api/board-reminders/sync",
+            json={"command_id":cmd_id,"title":title,"reminder_time":rtime,"content":title},timeout=2)
+    except: pass
+
 def ws_run():
     while True:
         try:
@@ -64,33 +85,38 @@ def on_msg(msg):
     elif t == "server_command":
         cmd = msg.get("command",""); cid = msg.get("command_id","")
         if cmd == "reminder":
+            # Legacy format - extract from old command_params structure
             rd = msg.get("command_params",{}).get("reminder_data",{})
             title = rd.get("title","") or msg.get("content","")
-            content = rd.get("content","") or title
+            rtext = rd.get("content","") or title
             rtime = rd.get("reminder_time","") or rd.get("reminderTime","")
-            log(f"REMINDER: {title}")
-            rec = {"command_id":cid,"title":title,"content":content,"reminder_time":rtime,
+            log(f"LEGACY REMINDER: {title}")
+            rec = {"command_id":cid,"title":title,"content":rtext,"reminder_time":rtime,
                    "status":"received","received_at":time.strftime("%Y-%m-%dT%H:%M:%S")}
             _reminders.insert(0, rec)
-            try:
-                fp = os.path.join(os.path.dirname(__file__),"reminders.json")
-                with open(fp,"w",encoding="utf-8") as f: json.dump(_reminders[:50],f,ensure_ascii=False)
-            except: pass
-            # Push to board Flask + 8000 cache
-            try:
-                import http.client
-                _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-                _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
-                _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
-                _conn.getresponse().read(); _conn.close()
-            except: pass
-            try:
-                rq.post("http://127.0.0.1:8000/api/board-reminders/sync",
-                    json={"title":title,"reminder_time":rtime,"content":title},timeout=2)
-            except: pass
+            self_save_reminders()
+            _push_to_board(title, rtime)
+            _sync_to_8000(cid, title, rtime)
             if _ws[0]:
                 _ws[0].send(json.dumps({"type":"command_response","command_id":cid,
                     "command":cmd,"status":"success","result":{"received":True}}))
+    elif t == "reminder_delivery":
+        # NEW PROTOCOL Section 4.2: reminder_delivery
+        rid = msg.get("reminder_id","")
+        rd = msg.get("reminder_data",{})
+        title = rd.get("title","") or rd.get("content","")
+        rtext = rd.get("content","") or title
+        rtime = rd.get("reminder_time","") or rd.get("reminderTime","")
+        log(f"REMINDER_DELIVERY: {title}")
+        rec = {"command_id":rid,"title":title,"content":rtext,"reminder_time":rtime,
+               "status":"received","received_at":time.strftime("%Y-%m-%dT%H:%M:%S")}
+        _reminders.insert(0, rec)
+        self_save_reminders()
+        _push_to_board(title, rtime)
+        _sync_to_8000(rid, title, rtime)
+        if _ws[0]:
+            _ws[0].send(json.dumps({"type":"reminder_response","reminder_id":rid,
+                "status":"received","result":{"received":True}}))
 
 threading.Thread(target=ws_run, daemon=True).start()
 
@@ -127,11 +153,9 @@ def send(data: dict):
     reminder_id = result.get("data",{}).get("id")
     if not reminder_id: raise HTTPException(500,"No reminder_id in response")
     
-    # Step 2: Send to device (Section 22.6)
-    send_r = rq.post(f"{API}/aipet/app/reminders/send/{pid}/{reminder_id}",
-                     headers={"Authorization":f"Bearer {_utoken[0]}"}, timeout=10)
-    send_result = send_r.json()
-    log(f"Created reminder #{reminder_id}, send result: {send_result.get('msg','')}")
+    # Step 2 is removed: Section 22.6 is deprecated.
+    # In new protocol, creation (Step 1) auto-sends to device.
+    log(f"Created reminder #{reminder_id} (auto-send via new protocol)")
     
     # Also direct POST to board Flask
     try:
@@ -154,7 +178,7 @@ def send(data: dict):
                json={"status":"sent"}, timeout=5)
     except: pass
     
-    return JSONResponse({"success":True,"reminder_id":reminder_id,"send_result":send_result.get("msg","")})
+    return JSONResponse({"success":True,"reminder_id":reminder_id})
 
 @app.post("/api/update-remote-status")
 def update_remote_status(data: dict):
