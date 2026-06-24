@@ -1,4 +1,5 @@
-﻿import os, json
+import asyncio
+import os, json
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -216,7 +217,7 @@ async def status_update(data: dict):
         raise HTTPException(400, "command_id and status required")
     content = data.get("content", "")
     reminder_time = data.get("reminder_time", "")
-    # Update cache by command_id (try both cache and board SQLite)
+    # Update cache immediately
     records = _load_cache()
     for r in records:
         if r.get("command_id") == command_id:
@@ -224,8 +225,10 @@ async def status_update(data: dict):
             r["status_updated_at"] = datetime.now().isoformat()
             break
     _save_cache(records)
-    ssh_ok = _ssh_update_reminder(command_id, new_status, content, reminder_time)
-    return {"success": True, "ssh_sync": ssh_ok}
+    # SSH in background - don't block the server
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _ssh_update_reminder, command_id, new_status, content, reminder_time)
+    return {"success": True}
 
 @router.post("/delete-record")
 async def delete_board_record(data: dict):
@@ -275,81 +278,62 @@ async def board_status():
 
 @router.get("")
 async def list_board_reminders():
+    loop = asyncio.get_event_loop()
+    cache = _load_cache()
+    try:
+        data = await loop.run_in_executor(None, _list_board_from_ssh)
+        if data is not None:
+            return data
+    except:
+        pass
+    return cache
+
+
+def _list_board_from_ssh():
+    import json
     q = "import sqlite3,json; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('PRAGMA table_info(reminders)'); cols=[r[1] for r in c.fetchall()]; c.execute('SELECT * FROM reminders ORDER BY id DESC LIMIT 50'); rows=c.fetchall(); print(json.dumps([dict(zip(cols,row)) for row in rows],ensure_ascii=False)); conn.close()"
     out, err = _ssh_exec_py(q)
-    online = _check_online()
-    if out:
-        try:
-            data = json.loads(out)
-            for item in data:
-                item["board_host"] = BOARD_HOST
-                item["title"] = item.get("content", "")
-                item["file_path"] = item.get("audio_file", BOARD_AUDIO_DIR)
-            # Preserve final statuses from old cache
-            old_cache = _load_cache()
-            old_map = {}
+    if not out:
+        return None
+    try:
+        data = json.loads(out)
+        for item in data:
+            item["board_host"] = BOARD_HOST
+            item["title"] = item.get("content", "")
+            item["file_path"] = item.get("audio_file", BOARD_AUDIO_DIR)
+        old_cache = _load_cache()
+        old_map = {}
+        for o in old_cache:
+            k = o.get("command_id", "") or str(o.get("id", ""))
+            if k:
+                old_map[k] = o
+        merged_ids = set()
+        for item in data:
+            k = str(item.get("id", ""))
+            if k and k in old_map:
+                o = old_map[k]
+                if o.get("status") in ("completed", "failed", "executing", "cancelled"):
+                    item["status"] = o["status"]
+            ck = str(item.get("command_id", ""))
+            if ck and ck in old_map:
+                o = old_map[ck]
+                if o.get("status") in ("completed", "failed", "executing", "cancelled"):
+                    item["status"] = o["status"]
             for o in old_cache:
-                k = o.get("command_id", "") or str(o.get("id", ""))
-                if k:
-                    old_map[k] = o
-            for item in data:
-                k = str(item.get("id", ""))
-                if k in old_map:
-                    o = old_map[k]
-                    if o.get("status") in ("completed", "failed", "missed", "executing", "cancelled"):
-                        item["status"] = o["status"]
-                        item["audio_file"] = o.get("audio_file", item.get("audio_file", ""))
-                        item["presence_delay_count"] = o.get("presence_delay_count", 0)
-                        item["next_check"] = o.get("next_check", "")
-                        item["timeout_minutes"] = o.get("timeout_minutes", 60)
-                    elif o.get("status") == "sent":
-                        item["status"] = "sent"
-                    elif o.get("status") == "pending":
-                        # Board offline, message not yet received by board
-                        item["status"] = "pending"
-                # Also check by command_id
-                ck = str(item.get("command_id", ""))
-                if ck and ck in old_map:
-                    o = old_map[ck]
-                    if o.get("status") in ("completed", "failed", "missed", "executing", "cancelled"):
-                        item["status"] = o["status"]
-                    elif o.get("status") == "sent":
-                        item["status"] = "sent"
-            # Map SQLite "pending" -> "sent" (board has the reminder)
-            if online:
-                for item in data:
-                    if item.get("status") == "pending":
-                        item["status"] = "sent"
-            # Preserve command_id from old cache for entries that lost it
-            for item in data:
-                if not item.get("command_id"):
-                    for o in old_cache:
-                        if o.get("command_id") and                            (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")) and                            o.get("reminder_time") == item.get("reminder_time"):
-                            item["command_id"] = o["command_id"]
-                            break
-            # Merge old_cache entry status into matching board SQLite entries (by content+time)
-            # This handles cases where command_id matching fails (board data missing command_id)
-            matched_sync_ids = set()
-            for item in data:
-                for o in old_cache:
-                    if o.get("command_id") and                        (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")) and                        o.get("reminder_time") == item.get("reminder_time"):
-                        sync_st = o.get("status", "")
-                        if sync_st in ("executing", "completed", "failed", "cancelled"):
-                            item["status"] = sync_st
-                        if o.get("command_id"):
-                            item["command_id"] = o["command_id"]
-                        matched_sync_ids.add(id(o))
-                        break
-            # Preserve sync entries not yet matched to any board record
-            data_ids = {str(x.get("id", "")) for x in data}
-            for o in old_cache:
-                if o.get("command_id") and str(o.get("id", "")) not in data_ids and id(o) not in matched_sync_ids:
-                    data.append(o)
-            _save_cache(data)
-            return data
-        except:
-            pass
-    return _load_cache()
+                if o.get("command_id") and (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")) and o.get("reminder_time") == item.get("reminder_time"):
+                    item["status"] = o.get("status", item.get("status", "received"))
+                    if o.get("command_id"):
+                        item["command_id"] = o["command_id"]
+                    merged_ids.add(id(o))
+                    break
+        data_ids = {str(x.get("id", "")) for x in data}
+        for o in old_cache:
+            if o.get("command_id") and str(o.get("id", "")) not in data_ids and id(o) not in merged_ids:
+                data.append(o)
+        _save_cache(data)
+        return data
+    except Exception:
+        return None
 
 @router.delete("/{reminder_id}")
 async def delete_board_reminder(reminder_id: int):
