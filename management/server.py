@@ -1,4 +1,4 @@
-import json, time, threading, os, sys
+﻿import json, time, threading, os, sys
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
 def _rq_no_proxy_get(u, **k): k["proxies"] = {"http":None,"https":None}; return _rq_orig_get(u, **k)
@@ -80,7 +80,7 @@ def on_msg(msg):
             try:
                 import http.client
                 _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-                _conn = http.client.HTTPConnection("192.168.1.64",5000,timeout=3)
+                _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
                 _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
                 _conn.getresponse().read(); _conn.close()
             except: pass
@@ -133,7 +133,7 @@ def send(data: dict):
     try:
         import http.client
         _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.64",5000,timeout=3)
+        _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
         _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
         _resp = _conn.getresponse(); _resp.read(); _conn.close()
     except: pass
