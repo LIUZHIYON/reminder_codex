@@ -284,11 +284,27 @@ ssh cat@192.168.1.226 "sudo systemctl restart board-ws-client"
 ## 更新日志
 
 ### 2026-06-24
-`
-- fix: 取消/恢复操作同步到8000时使用new_status而非硬编码cancelled
-- fix: 8000后端board.py异步化，list_board_reminders改用run_in_executor后台SSH
-- fix: status-update和merge按reminder_time兜底匹配，修复不同command_id/content时的状态同步
-- fix: Remote Reminders Refresh改用事件委托机制，修复按钮onclick参数引用错误
-- fix: 增加resp.ok检查和Array.isArray确保API响应健壮性
-- fix: 使用encodeURIComponent/decodeURIComponent安全传递参数
-`
+#### 🔧 取消/恢复按钮状态同步修复
+**问题：** 在8001页面点击取消/恢复后，8000页面板子提醒状态未同步更新（仍显示旧状态）。
+
+**原因：**
+1. 8001服务端 `server.py` 中 `status-update` POST的 `"status"` 被硬编码为 `"cancelled"`，未使用前端传入的 `new_status`，导致恢复操作（sent）仍发送cancelled
+2. 8000后端 `board.py` 的 `list_board_reminders` 同步阻塞SSH，导致其他请求（如 `status-update`）被排队无法及时处理
+3. 同一提醒在板子SQLite和缓存中 `command_id` / `content` 不一致时，merge无法匹配，状态不能覆盖
+
+**修复：**
+- 8001: `"status": "cancelled"` → `"status": new_status`，恢复操作正确传sent
+- 8000: `list_board_reminders` 改用 `run_in_executor` 后台SSH查询，立即返回缓存数据
+- 8000: `status-update` 更新缓存后SSH异步执行，不阻塞请求
+- 8000: merge逻辑增加按 `reminder_time` 兜底匹配，command_id/content不一致时仍能同步状态
+
+#### 🔧 Remote Reminders Refresh修复
+**问题：** 在8001端口的Remote Reminders中点击Refresh按钮无响应，不加载服务器提醒列表。
+
+**原因：** 修改取消/删除按钮时代码嵌入了错误的 `onclick` 参数引用（`""+eid+"",""` 导致中文参数未正确引用），且旧fetch代码残留导致重复执行。
+
+**修复：**
+- 取消内联 `onclick`，改用事件委托（`data-*` 属性 + `document.addEventListener`）
+- 参数使用 `encodeURIComponent/decodeURIComponent` 安全传递
+- 增加 `resp.ok` 状态码检查和 `Array.isArray` 健壮性判断
+- 修复 `chr(34)` 未求值和重复sentTime列的问题
