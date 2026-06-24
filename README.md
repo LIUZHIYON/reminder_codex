@@ -279,3 +279,16 @@ ssh cat@192.168.1.226 "sudo systemctl restart board-ws-client"
 | SSH 通信 | paramiko |
 | WS 通信 | websocket-client |
 | 远程 API | AI Pet 服务器 Section 22 (HTTP) |
+
+
+## 更新日志
+
+### 2026-06-24
+`
+- fix: 取消/恢复操作同步到8000时使用new_status而非硬编码cancelled
+- fix: 8000后端board.py异步化，list_board_reminders改用run_in_executor后台SSH
+- fix: status-update和merge按reminder_time兜底匹配，修复不同command_id/content时的状态同步
+- fix: Remote Reminders Refresh改用事件委托机制，修复按钮onclick参数引用错误
+- fix: 增加resp.ok检查和Array.isArray确保API响应健壮性
+- fix: 使用encodeURIComponent/decodeURIComponent安全传递参数
+`
