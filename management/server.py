@@ -274,7 +274,7 @@ def cancel_remote_reminder(data: dict):
         # Sync to board via 8000 cache + SSH
         try:
             rq.post("http://127.0.0.1:8000/api/board-reminders/status-update",
-                json={"command_id": str(rid), "status": "cancelled", "content": title, "reminder_time": rtime}, timeout=3)
+                json={"command_id": str(rid), "status": new_status, "content": title, "reminder_time": rtime}, timeout=3)
         except:
             pass
         return JSONResponse({"success": True, "msg": result.get("msg","cache_updated")})
