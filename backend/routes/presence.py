@@ -7,7 +7,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PRESENCE_FILE = os.path.join(BASE, "board_presence.json")
 CACHE_FILE = os.path.join(BASE, "board_reminders.json")
 
-BOARD_HOST = "192.168.1.160"
+BOARD_HOST = "192.168.1.184"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
 BOARD_DB_PATH = "/home/cat/reminder_system/data/reminders.db"

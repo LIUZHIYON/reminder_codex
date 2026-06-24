@@ -82,7 +82,7 @@ def _push_to_board(title, rtime):
     try:
         import http.client
         _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.160",5000,timeout=3)
+        _conn = http.client.HTTPConnection("192.168.1.184",5000,timeout=3)
         _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
         _conn.getresponse().read(); _conn.close()
     except: pass
@@ -202,7 +202,7 @@ def send(data: dict):
         _s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _s.settimeout(3)
         try:
-            _s.connect(("192.168.1.160", 5000))
+            _s.connect(("192.168.1.184", 5000))
             _s.close()
             board_online_via_post = True
         except:
@@ -212,7 +212,7 @@ def send(data: dict):
     try:
         rq.put(f"{API}/aipet/app/reminders/{reminder_id}",
                headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
-               json={"status":desired_status, "sentTime": time.strftime("%Y-%m-%dT%H:%M:%S") if board_online_via_post else None}, timeout=5)
+               json={"status":desired_status, "sentTime": time.strftime("%Y-%m-%dT%H:%M:%S")}, timeout=5)
         log(f"Status #{reminder_id} -> {desired_status} (board_online={board_online_via_post})")
     except: pass
     
@@ -342,7 +342,7 @@ def board_status():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(3)
         try:
-            s.connect(("192.168.1.160", 5000))
+            s.connect(("192.168.1.184", 5000))
             s.close()
             return JSONResponse({"online": True, "method": "direct_flask"})
         except:
