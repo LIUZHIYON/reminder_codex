@@ -258,6 +258,18 @@ async def list_board_reminders():
                 for item in data:
                     if item.get("status") == "pending":
                         item["status"] = "sent"
+            # Preserve command_id from old cache for entries that lost it
+            for item in data:
+                if not item.get("command_id"):
+                    for o in old_cache:
+                        if o.get("command_id") and                            (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")) and                            o.get("reminder_time") == item.get("reminder_time"):
+                            item["command_id"] = o["command_id"]
+                            break
+            # Also preserve any old cache entries with command_id not yet in board SQLite
+            data_ids = {str(x.get("id", "")) for x in data}
+            for o in old_cache:
+                if o.get("command_id") and str(o.get("id", "")) not in data_ids:
+                    data.append(o)
             _save_cache(data)
             return data
         except:
