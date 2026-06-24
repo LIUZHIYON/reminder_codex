@@ -78,39 +78,49 @@ def _sftp_get(remote_path, local_path):
     except Exception as e:
         return False
 
-def _ssh_update_reminder(command_id, new_status):
-    """Update board SQLite reminder status via SSH using SFTP temp script."""
-    if not command_id:
+def _ssh_update_reminder(command_id, new_status, content="", reminder_time=""):
+    """Update board SQLite reminder status via SSH using SFTP temp script.
+    Tries command_id first, then falls back to content+reminder_time matching.
+    """
+    import re as _re
+    if not command_id and not content:
         return False
-    py_code = (
-        "import sqlite3\n"
-        "conn=sqlite3.connect('" + BOARD_DB_PATH + "')\n"
-        "c=conn.cursor()\n"
-        "try:\n"
-        "    c.execute('ALTER TABLE reminders ADD COLUMN command_id TEXT')\n"
-        "    conn.commit()\n"
-        "except:\n"
-        "    pass\n"
-        "c.execute('UPDATE reminders SET status=? WHERE command_id=?', ('" + new_status + "','" + command_id + "'))\n"
-        "if c.rowcount==0:\n"
-        "    c.execute('UPDATE reminders SET status=? WHERE id=(SELECT MAX(id) FROM reminders)', ('" + new_status + "',))\n"
-        "conn.commit()\n"
-        "conn.close()\n"
-        "print('ok')\n"
-    )
+    safe_c = content.replace("'", "\\'").replace('"', '\\"')
+    safe_t = reminder_time.replace("'", "\\'").replace('"', '\\"')
+    # Build Python script to run on board
+    lines = [
+        "import sqlite3",
+        "conn=sqlite3.connect('" + BOARD_DB_PATH + "')",
+        "c=conn.cursor()",
+        "try:",
+        "    c.execute('ALTER TABLE reminders ADD COLUMN command_id TEXT')",
+        "    conn.commit()",
+        "except:",
+        "    pass",
+        "# Try by command_id first",
+        "c.execute('UPDATE reminders SET status=? WHERE command_id=?', ('" + new_status + "','" + command_id + "'))",
+        "if c.rowcount==0 and '" + safe_c + "':",
+        "    c.execute('UPDATE reminders SET status=? WHERE content=? AND reminder_time=?', ('" + new_status + "','" + safe_c + "','" + safe_t + "'))",
+        "conn.commit()",
+        "conn.close()",
+        "print('ok')",
+    ]
+    py_code = "\n".join(lines)
+
     try:
+        import paramiko
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
         sftp = client.open_sftp()
         remote_path = "/tmp/_upd_status.py"
-        with sftp.open(remote_path, "w") as f:
+        with sftp.open(remote_path, 'w') as f:
             f.write(py_code)
         sftp.close()
-        _, stdout, stderr = client.exec_command("python3 " + remote_path)
+        _, stdout, stderr = client.exec_command('python3 ' + remote_path)
         out = stdout.read().decode()
         err = stderr.read().decode()[:500]
-        client.exec_command("rm -f " + remote_path)
+        client.exec_command('rm -f ' + remote_path)
         client.close()
         if err:
             print("SSH update stderr:", err)
@@ -118,7 +128,6 @@ def _ssh_update_reminder(command_id, new_status):
     except Exception as e:
         print("SSH update failed:", e)
         return False
-
 def _ssh_delete_reminder(content, reminder_time):
     """Delete reminder from board SQLite via SSH matching content+time."""
     safe_c = content.replace("'", "\\'")
