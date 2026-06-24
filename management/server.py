@@ -1,4 +1,4 @@
-import time
+﻿import time
 import json, time, threading, os, sys
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
@@ -17,7 +17,7 @@ API = "http://47.118.26.156:8000/api/v1"
 SERIAL = "6976f96f-bc80-56e3-9b27-13d12cdde9d3"
 PORT = 8001
 
-_utoken = [""]; _last_refresh = [0]; _ws = [None]; _reminders = []
+_utoken = [""]; _last_refresh = [0]; _reminders = []
 
 def log(m): print(f"[{time.strftime('%H:%M:%S')}] {m}")
 
@@ -43,7 +43,7 @@ def refresh(force=False):
     # Re-login loop
     for attempt in range(2):
         try:
-            r = rq.get(f"{API}/aipet/app/auth/13800138000/888888", timeout=10)
+            r = rq.get(f"{API}/aipet/app/auth/13900139000/888888", timeout=10)
             d = r.json()
             if d.get("success"):
                 _utoken[0] = d.get("data","")
@@ -82,7 +82,7 @@ def _push_to_board(title, rtime):
     try:
         import http.client
         _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
+        _conn = http.client.HTTPConnection("192.168.1.160",5000,timeout=3)
         _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
         _conn.getresponse().read(); _conn.close()
     except: pass
@@ -93,7 +93,6 @@ def _sync_to_8000(cmd_id, title, rtime):
             json={"command_id":cmd_id,"title":title,"reminder_time":rtime,"content":title},timeout=2)
     except: pass
 
-def ws_run():
     while True:
         try:
             r = rq.get(f"{API}/aipet/ws/auth/{SERIAL}", timeout=10)
@@ -109,7 +108,6 @@ def ws_run():
             _ws[0].run_forever()
         except Exception as e: log(f"WS error: {e}")
         time.sleep(5)
-
 def on_msg(msg):
     t = msg.get("type","")
     log(f"WS {t}: {json.dumps(msg, ensure_ascii=False)[:200]}")
@@ -150,8 +148,6 @@ def on_msg(msg):
         if _ws[0]:
             _ws[0].send(json.dumps({"type":"reminder_response","reminder_id":rid,
                 "status":"received","result":{"received":True}}))
-
-threading.Thread(target=ws_run, daemon=True).start()
 
 app = FastAPI(title="RM")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -203,7 +199,7 @@ def send(data: dict):
     try:
         import http.client
         _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
+        _conn = http.client.HTTPConnection("192.168.1.160",5000,timeout=3)
         _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
         _resp = _conn.getresponse(); _resp.read(); _conn.close()
         board_online_via_post = True
@@ -327,16 +323,18 @@ def delete_remote_reminder_record(data: dict):
 
 @app.get("/api/board-status")
 def board_status():
-    """Check board online status (fast check first)."""
+    """Check board online status via socket connection to Flask port."""
     result = {"online": False, "method": "none"}
-    # Method 1: direct board Flask (fast - 3s timeout)
     try:
-        import http.client
-        _conn = http.client.HTTPConnection("192.168.1.226",5000,timeout=3)
-        _conn.request("GET","/api/status")
-        _resp = _conn.getresponse(); _resp.read(); _conn.close()
-        if _resp.status == 200:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3)
+        try:
+            s.connect(("192.168.1.160", 5000))
+            s.close()
             return JSONResponse({"online": True, "method": "direct_flask"})
+        except:
+            s.close()
     except: pass
     return JSONResponse(result)
 
