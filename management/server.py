@@ -1,3 +1,4 @@
+import time
 import json, time, threading, os, sys
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
@@ -16,27 +17,42 @@ API = "http://47.118.26.156:8000/api/v1"
 SERIAL = "6976f96f-bc80-56e3-9b27-13d12cdde9d3"
 PORT = 8001
 
-_utoken = [""]; _ws = [None]; _reminders = []
+_utoken = [""]; _last_refresh = [0]; _ws = [None]; _reminders = []
 
 def log(m): print(f"[{time.strftime('%H:%M:%S')}] {m}")
 
-def refresh():
+def refresh(force=False):
+    """Get auth token. Only actually logs in if token is empty or last refresh > 10 min old."""
+    now = time.time()
+    if not force and _utoken[0] and now - _last_refresh[0] < 600:
+        return True
     try:
         r = rq.get(f"{API}/aipet/app/auth/13800138000/888888", timeout=10)
         d = r.json()
         if d.get("success"):
             _utoken[0] = d.get("data","")
+            _last_refresh[0] = now
             return True
     except Exception as e: log(f"Auth error: {e}")
+    if not force:
+        if _utoken[0]:
+            log("Auth failed but token exists, trying to continue")
+            return True
     _utoken[0] = ""; return False
 
+_cached_pid = [None]
 def get_pid():
+    if _cached_pid[0] is not None:
+        return _cached_pid[0]
     refresh()
     if not _utoken[0]: return None
     try:
         r = rq.get(f"{API}/aipet/app/myaipets", headers={"Authorization":f"Bearer {_utoken[0]}"}, timeout=10)
         pets = r.json().get("data",[])
-        return pets[0].get("id") if pets else None
+        pid = pets[0].get("id") if pets else None
+        if pid:
+            _cached_pid[0] = pid
+        return pid
     except: return None
 
 def self_save_reminders():
