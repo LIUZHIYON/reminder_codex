@@ -203,7 +203,7 @@ def send(data: dict):
     try:
         rq.put(f"{API}/aipet/app/reminders/{reminder_id}",
                headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
-               json={"status":desired_status}, timeout=5)
+               json={"status":desired_status, "sentTime": time.strftime("%Y-%m-%dT%H:%M:%S") if board_online_via_post else None}, timeout=5)
         log(f"Status #{reminder_id} -> {desired_status} (board_online={board_online_via_post})")
     except: pass
     
