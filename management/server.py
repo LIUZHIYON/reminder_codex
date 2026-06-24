@@ -1,4 +1,4 @@
-﻿import json, time, threading, os, sys
+import json, time, threading, os, sys
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
 def _rq_no_proxy_get(u, **k): k["proxies"] = {"http":None,"https":None}; return _rq_orig_get(u, **k)
@@ -112,23 +112,27 @@ def reminders():
 @app.post("/api/send-reminder")
 def send(data: dict):
     title = data.get("title",""); rtime = data.get("reminder_time",""); content = data.get("content","") or title
+    repeat_type = data.get("repeat_type","none")
     if not title or not rtime: raise HTTPException(400,"title+time required")
     if not refresh(): raise HTTPException(500,"Login failed")
     pid = get_pid()
     if not pid: raise HTTPException(500,"No device")
-    # NEW PROTOCOL: Step 1 - Create reminder via Section 22.3
-    create_payload = {"title":title,"content":content,"reminderTime":rtime,"repeatType":data.get("repeat_type","none")}
+    
+    # Step 1: Create reminder (Section 22.3)
+    create_payload = {"title":title,"content":content,"reminderTime":rtime,"repeatType":repeat_type}
     r = rq.post(f"{API}/aipet/app/reminders/{pid}", headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
                 json=create_payload, timeout=10)
     result = r.json()
     if not result.get("success"): raise HTTPException(500, result.get("msg","Failed"))
     reminder_id = result.get("data",{}).get("id")
     if not reminder_id: raise HTTPException(500,"No reminder_id in response")
-    # Step 2 - Send to device via Section 22.6
+    
+    # Step 2: Send to device (Section 22.6)
     send_r = rq.post(f"{API}/aipet/app/reminders/send/{pid}/{reminder_id}",
                      headers={"Authorization":f"Bearer {_utoken[0]}"}, timeout=10)
     send_result = send_r.json()
     log(f"Created reminder #{reminder_id}, send result: {send_result.get('msg','')}")
+    
     # Also direct POST to board Flask
     try:
         import http.client
@@ -137,14 +141,34 @@ def send(data: dict):
         _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
         _resp = _conn.getresponse(); _resp.read(); _conn.close()
     except: pass
-    # Sync to local cache
+    
+    # Sync to local cache with command_id = remote reminder_id
     try:
         rq.post("http://127.0.0.1:8000/api/board-reminders/sync",
-            json={"title":title,"reminder_time":rtime,"content":title},timeout=2)
+            json={"command_id":str(reminder_id),"title":title,"reminder_time":rtime,"content":title},timeout=2)
     except: pass
+    
     return JSONResponse({"success":True,"reminder_id":reminder_id,"send_result":send_result.get("msg","")})
 
-
+@app.post("/api/update-remote-status")
+def update_remote_status(data: dict):
+    """Update reminder status on remote server (Section 22.4 PUT)."""
+    rid = data.get("reminder_id")
+    status = data.get("status", "")
+    if not rid or not status:
+        raise HTTPException(400, "reminder_id and status required")
+    if not refresh():
+        raise HTTPException(500, "Login failed")
+    try:
+        r = rq.put(f"{API}/aipet/app/reminders/{rid}",
+                   headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
+                   json={"status": status}, timeout=10)
+        result = r.json()
+        log(f"Remote status update #{rid} -> {status}: {result.get('msg','')}")
+        return JSONResponse({"success": result.get("success", False), "msg": result.get("msg","")})
+    except Exception as e:
+        log(f"Remote status update error: {e}")
+        raise HTTPException(500, str(e))
 
 @app.get("/api/remote-reminders")
 def remote_reminders():
@@ -157,9 +181,13 @@ def remote_reminders():
         r = rq.get(f"{API}/aipet/app/reminders/list/{pid}/1/50",
                    headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
         result = r.json()
-        return JSONResponse(result.get("data", result))
+        # Server returns rows at top level: { code, rows: [...], total, ... }
+        rows = result.get("rows", [])
+        total = result.get("total", 0)
+        return JSONResponse({"success": True, "rows": rows, "total": total})
     except Exception as e:
         raise HTTPException(500, str(e))
+
 @app.get("/")
 def index():
     try:

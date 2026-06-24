@@ -1,4 +1,4 @@
-﻿import os, json, logging
+import os, json, logging
 from datetime import datetime, timedelta
 
 log = logging.getLogger(__name__)
@@ -36,7 +36,6 @@ def _ssh_update_status(command_id, new_status):
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
 
-        # Build Python script to execute on board
         py_code = (
             "import sqlite3\n"
             "conn=sqlite3.connect('" + BOARD_DB_PATH + "')\n"
@@ -44,30 +43,50 @@ def _ssh_update_status(command_id, new_status):
             "try:\n"
             "    c.execute('ALTER TABLE reminders ADD COLUMN command_id TEXT')\n"
             "    conn.commit()\n"
-            "    print('col_added')\n"
             "except:\n"
-            "    print('col_exists')\n"
+            "    pass\n"
             "c.execute('UPDATE reminders SET status=? WHERE command_id=?', ('" + new_status + "','" + command_id + "'))\n"
-            "affected=c.rowcount\n"
-            "if affected==0:\n"
+            "if c.rowcount==0:\n"
             "    c.execute('UPDATE reminders SET status=? WHERE id=(SELECT MAX(id) FROM reminders)', ('" + new_status + "',))\n"
-            "    print('fallback_updated')\n"
             "conn.commit()\n"
             "conn.close()\n"
-            "print('done')\n"
+            "print('ok')\n"
         )
 
-        # Write script to temp file on board via exec, then run it
-        import urllib.parse
-        _, stdout, stderr = client.exec_command("python3 << 'EOF'\n" + py_code + "\nEOF")
-        out = stdout.read().decode()
+        sftp = client.open_sftp()
+        remote_path = "/tmp/_upd_status.py"
+        with sftp.open(remote_path, "w") as f:
+            f.write(py_code)
+        sftp.close()
+        _, stdout, stderr = client.exec_command("python3 " + remote_path)
         err = stderr.read().decode()[:500]
-        if err and 'col_exists' not in err:
-            log.warning(f"SSH stderr: {err}")
+        client.exec_command("rm -f " + remote_path)
         client.close()
+        if err and 'already exists' not in err and 'col' not in err:
+            log.warning(f"SSH stderr: {err}")
         log.info(f"SSH status: {command_id} -> {new_status}")
     except Exception as e:
         log.warning(f"SSH failed: {e}")
+
+def _update_remote_status(command_id, new_status):
+    """Tell 8001 server to update the reminder status on the remote server."""
+    if not command_id:
+        return
+    try:
+        import urllib.request, json as _json
+        body = _json.dumps({"reminder_id": command_id, "status": new_status}).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8001/api/update-remote-status",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        resp = urllib.request.urlopen(req, timeout=3)
+        result = _json.loads(resp.read())
+        log.info(f"Remote status update: {command_id} -> {new_status}: {result.get('msg','')}")
+    except Exception as e:
+        # 8001 might not be running, which is ok
+        log.debug(f"Remote update failed: {e}")
 
 def process_reminders():
     if not os.path.exists(CACHE_FILE):
@@ -143,5 +162,6 @@ def process_reminders():
             if cid:
                 try:
                     _ssh_update_status(cid, new_st)
-                except Exception as ssh_e:
-                    log.warning(f"SSH error for {cid}: {ssh_e}")
+                    _update_remote_status(cid, new_st)
+                except Exception as e:
+                    log.warning(f"Status sync error for {cid}: {e}")

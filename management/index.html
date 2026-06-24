@@ -39,6 +39,12 @@ button:disabled{background:#b2bec3}
 <h3>✉️ 发送提醒到设备</h3>
 <input type="text" id="titleInput" placeholder="提醒标题（必填）">
 <textarea id="contentInput" placeholder="提醒内容（可选）"></textarea>
+<select id="repeatTypeSelect" style="width:100%;padding:8px;margin-bottom:8px;border:1px solid #dfe6e9;border-radius:4px;font-size:13px">
+  <option value="none">不重复</option>
+  <option value="daily">每天</option>
+  <option value="weekly">每周</option>
+  <option value="monthly">每月</option>
+</select>
 <input type="datetime-local" id="timeInput">
 <button id="sendBtn" onclick="doSend()">发送提醒</button>
 <div id="result" style="margin-top:8px;font-size:13px"></div>
@@ -68,7 +74,7 @@ async function loadRemoteReminders() {
     tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>ID</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Title</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Content</th>";
     tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Time</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Status</th>";
     tbl += "<th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Repeat</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Sent</th><th style=\'padding:6px;border:1px solid #ddd;text-align:left\'>Result</th></tr>";
-    var sm = {pending:"PENDING",sent:"SENT",executing:"EXECUTING",completed:"COMPLETED",failed:"FAILED",cancelled:"CANCELLED"};
+    var sm = {pending:"⏳待下发",sent:"📨已下发",executing:"🔄执行中",completed:"✅已完成",failed:"❌失败",cancelled:"🚫已取消"pending:"⏳待下发",sent:"📨已下发",executing:"🔄执行中",completed:"✅已完成",failed:"❌失败",cancelled:"🚫已取消"};
     for (var i=0;i<rows.length;i++) {
       var r=rows[i];
       tbl += "<tr><td style=\'padding:4px;border:1px solid #ddd\'>"+(r.id||"")+"</td>";
@@ -113,12 +119,13 @@ async function doSend(){
   let title=document.getElementById("titleInput").value.trim();
   let content=document.getElementById("contentInput").value.trim();
   let t=document.getElementById("timeInput").value;
+  let repeat_type=document.getElementById("repeatTypeSelect").value;
   let res=document.getElementById("result");
   if(!title){res.innerHTML='<span class="err">请输入标题</span>';btn.disabled=false;btn.textContent="发送提醒";return;}
   let rt=t?t+":00":new Date().toISOString().slice(0,19);
   try{
     let r=await fetch("/api/send-reminder",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({title,content,reminder_time:rt,repeat_type:""})});
+      body:JSON.stringify({title,content,reminder_time:rt,repeat_type:repeat_type})});
     let d=await r.json();
     if(d.success){res.innerHTML='<span class="ok">✅ 已发送！</span>';document.getElementById("titleInput").value="";setTimeout(refresh,2000);}
     else{res.innerHTML='<span class="err">❌ '+(d.detail||"失败")+'</span>';}
