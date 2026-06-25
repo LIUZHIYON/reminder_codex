@@ -169,41 +169,36 @@ def _ssh_delete_reminder(content, reminder_time):
         return "0"
 
 def _board_speak(text):
-    """Generate TTS locally, upload WAV to board, play via paplay."""
-    import os
+    """Generate TTS on board via espeak-ng, play via paplay."""
     text = text.strip()
     if not text:
         raise ValueError("Empty text")
-    # Generate TTS audio locally with custom_text (no prefix/suffix)
-    aid = abs(hash(text)) % 100000
-    from config import AUDIO_DIR
-    cached_path = os.path.join(AUDIO_DIR, f"board_{aid}.wav")
-    audio_path = cached_path
-    # Skip generation if cached WAV already exists
-    if not os.path.exists(cached_path):
-        audio_path = generate_audio_sync(aid, text, custom_text=text)
-        if not audio_path or not os.path.exists(audio_path):
-            raise RuntimeError("TTS generation failed")
-        # Rename to cached name for future reuse
-        if audio_path != cached_path:
-            try:
-                import shutil
-                shutil.copy2(audio_path, cached_path)
-                audio_path = cached_path
-            except:
-                pass
-    # Upload to board and play
     cli = paramiko.SSHClient()
     cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
         cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
         sf = cli.open_sftp()
-        sf.put(audio_path, "/tmp/_tts_play.wav")
+        # Write text to input file
+        with sf.open("/tmp/_tts_input.txt", "w") as f:
+            f.write(text.encode("utf-8"))
         sf.close()
-        # Set volume to 50%, play once
-        cli.exec_command("pactl set-sink-volume 0 50% 2>/dev/null; nohup paplay /tmp/_tts_play.wav > /dev/null 2>&1 &")
-        cli.close()
-        print(f"[BoardSpeak] OK: {text[:30]}...")
+        # Generate TTS audio on board using espeak-ng
+        _, so, se = cli.exec_command(
+            "pactl set-sink-volume 0 50% 2>/dev/null; espeak-ng -v zh -w /tmp/_tts_play.wav -f /tmp/_tts_input.txt 2>&1"
+        )
+        err = se.read().decode().strip()[:200] if se else ""
+        out = so.read().decode().strip()[:200]
+        # Check if WAV was generated
+        _, so2, _ = cli.exec_command("wc -c /tmp/_tts_play.wav 2>/dev/null || echo EMPTY")
+        size = so2.read().decode().strip()
+        if size and size.split()[0].isdigit() and int(size.split()[0]) > 100:
+            # Play via paplay in background
+            cli.exec_command("nohup paplay /tmp/_tts_play.wav > /dev/null 2>&1 &")
+            cli.close()
+            print(f"[BoardSpeak] OK: {text[:30]}...")
+        else:
+            cli.close()
+            raise RuntimeError(f"TTS failed: {err or out}")
     except Exception as e:
         print(f"[BoardSpeak] Error: {e}")
         raise
