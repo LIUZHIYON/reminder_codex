@@ -183,7 +183,7 @@ def _board_speak(text):
         sf.close()
         # Generate TTS audio on board using espeak-ng
         _, so, se = cli.exec_command(
-            "pactl set-sink-volume 0 50% 2>/dev/null; espeak-ng -v zh -w /tmp/_tts_play.wav -f /tmp/_tts_input.txt 2>&1"
+            "pactl set-sink-mute 0 0 2>/dev/null; pactl set-sink-volume 0 50% 2>/dev/null; espeak-ng -v zh -w /tmp/_tts_play.wav -f /tmp/_tts_input.txt 2>&1"
         )
         err = se.read().decode().strip()[:200] if se else ""
         out = so.read().decode().strip()[:200]
@@ -297,7 +297,7 @@ async def stop_board_playback():
         cli = paramiko.SSHClient()
         cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
-        cli.exec_command("pkill -f paplay 2>/dev/null; pkill -f ffplay 2>/dev/null; pkill -f espeak-ng 2>/dev/null")
+        cli.exec_command("pactl set-sink-mute 0 1 2>/dev/null; pkill -f paplay 2>/dev/null; pkill -f ffplay 2>/dev/null; pkill -f espeak-ng 2>/dev/null")
         cli.close()
         return {"success": True}
     except Exception as e:
