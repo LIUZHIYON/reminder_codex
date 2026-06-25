@@ -72,6 +72,17 @@ def _update_remote_status(command_id, new_status):
     """Tell 8001 server to update the reminder status on the remote server."""
     if not command_id:
         return
+    # Skip if board is offline
+    try:
+        import socket as _sk
+        _s = _sk.socket(_sk.AF_INET, _sk.SOCK_STREAM)
+        _s.settimeout(2)
+        if _s.connect_ex((BOARD_HOST, 22)) != 0:
+            _s.close()
+            return
+        _s.close()
+    except:
+        pass
     try:
         import urllib.request, json as _json
         body = _json.dumps({"reminder_id": command_id, "status": new_status}).encode("utf-8")
@@ -98,9 +109,22 @@ def process_reminders():
     now = datetime.now()
     changed_records = []
     present = get_presence()
+    # Check board online status once
+    board_online = False
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2)
+        board_online = s.connect_ex((BOARD_HOST, 22)) == 0
+        s.close()
+    except:
+        pass
     for r in recs:
         s = r.get("status", "")
         if s not in ("received", "pending", "sent", "executing"):
+            continue
+        # Skip pending reminders if board is offline (not yet delivered to board)
+        if s in ("received", "pending", "sent", "executing") and not board_online:
             continue
         rt = r.get("reminder_time", "")
         if not rt:
