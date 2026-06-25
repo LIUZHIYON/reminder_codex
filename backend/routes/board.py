@@ -174,6 +174,7 @@ class BoardReminderSync(BaseModel):
     file_path: str = ""
     received_at: str = ""
     status: str = "received"
+    repeat_type: str = ""
 
 @router.post("/sync")
 async def sync_board_reminder(data: BoardReminderSync):
@@ -191,6 +192,7 @@ async def sync_board_reminder(data: BoardReminderSync):
         "file_path": data.file_path,
         "received_at": data.received_at or datetime.now().isoformat(),
         "status": init_status,
+        "repeat_type": data.repeat_type,
         "sync_at": datetime.now().isoformat(),
     }
     records.insert(0, rec)
@@ -321,11 +323,15 @@ def _list_board_from_ssh():
                 o = old_map[k]
                 if o.get("status") in ("completed", "failed", "executing", "cancelled"):
                     item["status"] = o["status"]
+                    if "repeat_type" in o:
+                        item["repeat_type"] = o["repeat_type"]
             ck = str(item.get("command_id", ""))
             if ck and ck in old_map:
                 o = old_map[ck]
                 if o.get("status") in ("completed", "failed", "executing", "cancelled"):
                     item["status"] = o["status"]
+                    if "repeat_type" in o:
+                        item["repeat_type"] = o["repeat_type"]
             for o in old_cache:
                 matched = False
                 if o.get("reminder_time") and item.get("reminder_time") and o.get("reminder_time") == item.get("reminder_time"):
@@ -335,6 +341,8 @@ def _list_board_from_ssh():
                         matched = True
                 if matched:
                     item["status"] = o.get("status", item.get("status", "received"))
+                    if "repeat_type" in o:
+                        item["repeat_type"] = o["repeat_type"]
                     if o.get("command_id"):
                         item["command_id"] = o["command_id"]
                     merged_ids.add(id(o))

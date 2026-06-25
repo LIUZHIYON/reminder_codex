@@ -354,6 +354,8 @@ function renderBoardReminders() {
     html += '<div class="reminder-card">';
     html += '<div class="time-block"><div class="time">' + (time.split(" ")[1] || time) + '</div><div class="date">' + (time.split(" ")[0] || "") + '</div></div>';
     html += '<div class="content"><div class="title">' + escapeHtml(title) + '</div>';
+    var rpt = r.repeatType || r.repeat_type || "";
+    if (rpt) { html += '<div class="desc">🔄 ' + escapeHtml(rpt) + '</div>'; }
     html += '<div class="desc">收到时间: ' + recv + '</div>';
     html += '<div class="desc file-path">文件位置: ' + escapeHtml(fpath || "未知") + '</div></div>';
     html += '<span class="status-badge ' + status + '">' + getBoardStatusLabel(status) + '</span>';

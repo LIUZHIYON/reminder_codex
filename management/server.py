@@ -87,10 +87,10 @@ def _push_to_board(title, rtime):
         _conn.getresponse().read(); _conn.close()
     except: pass
 
-def _sync_to_8000(cmd_id, title, rtime):
+def _sync_to_8000(cmd_id, title, rtime, repeat_type=""):
     try:
         rq.post("http://127.0.0.1:8000/api/board-reminders/sync",
-            json={"command_id":cmd_id,"title":title,"reminder_time":rtime,"content":title},timeout=2)
+            json={"command_id":cmd_id,"title":title,"reminder_time":rtime,"content":title,"repeat_type":repeat_type},timeout=2)
     except: pass
 
     while True:
@@ -121,13 +121,21 @@ def on_msg(msg):
             title = rd.get("title","") or msg.get("content","")
             rtext = rd.get("content","") or title
             rtime = rd.get("reminder_time","") or rd.get("reminderTime","")
+            rtype = rd.get("repeatType","") or rd.get("repeat_type","")
+        if not rtype and rid:
+            try:
+                r2 = rq.get(f"{API}/aipet/app/reminders/{rid}", headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=3)
+                d2 = r2.json()
+                rtype = d2.get("data",{}).get("repeatType","") or d2.get("data",{}).get("repeat_type","")
+            except:
+                pass
             log(f"LEGACY REMINDER: {title}")
             rec = {"command_id":cid,"title":title,"content":rtext,"reminder_time":rtime,
                    "status":"received","received_at":time.strftime("%Y-%m-%dT%H:%M:%S")}
             _reminders.insert(0, rec)
             self_save_reminders()
             _push_to_board(title, rtime)
-            _sync_to_8000(cid, title, rtime)
+            _sync_to_8000(cid, title, rtime, rtype)
             if _ws[0]:
                 _ws[0].send(json.dumps({"type":"command_response","command_id":cid,
                     "command":cmd,"status":"success","result":{"received":True}}))
@@ -144,7 +152,7 @@ def on_msg(msg):
         _reminders.insert(0, rec)
         self_save_reminders()
         _push_to_board(title, rtime)
-        _sync_to_8000(rid, title, rtime)
+        _sync_to_8000(rid, title, rtime, rtype)
         if _ws[0]:
             _ws[0].send(json.dumps({"type":"reminder_response","reminder_id":rid,
                 "status":"received","result":{"received":True}}))
