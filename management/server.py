@@ -22,40 +22,29 @@ _utoken = [""]; _last_refresh = [0]; _reminders = []
 def log(m): print(f"[{time.strftime('%H:%M:%S')}] {m}")
 
 def refresh(force=False):
-    """Get auth token. Validates cached token before returning it.
-    If validation fails, re-login. Retries login up to 2 times on failure.
-    """
+    """Get auth token. Always tries to login first. Falls back to cached token on failure."""
     now = time.time()
-    if not force and _utoken[0] and now - _last_refresh[0] < 600:
-        # Fast path: use cached token (no validation needed within 5 min)
-        if now - _last_refresh[0] < 300:
-            return True
-        # Slow path: validate cached token by checking myinfo endpoint
-        try:
-            r = rq.get(f"{API}/aipet/app/myinfo",
-                       headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=5)
-            if r.status_code == 200:
-                _last_refresh[0] = now  # extend cache
-                return True
-            log("Cached token invalid, re-login...")
-        except:
-            log("Token validation failed (network), re-login...")
-    # Re-login loop
-    for attempt in range(2):
-        try:
-            r = rq.get(f"{API}/aipet/app/auth/13900139000/888888", timeout=10)
-            d = r.json()
-            if d.get("success"):
-                _utoken[0] = d.get("data","")
-                _last_refresh[0] = time.time()
-                if attempt > 0:
-                    log(f"Login succeeded after {attempt+1} attempt(s)")
-                return True
-        except Exception as e:
-            log(f"Auth error (attempt {attempt+1}): {e}")
-        if attempt == 0:
-            time.sleep(1)
-    _utoken[0] = ""; return False
+    # Always try fresh login first
+    if force or now - _last_refresh[0] > 30:
+        for attempt in range(2):
+            try:
+                r = rq.get(f"{API}/aipet/app/auth/13900139000/888888", timeout=10)
+                d = r.json()
+                token = d.get("data","")
+                if d.get("success") and token:
+                    _utoken[0] = token
+                    _last_refresh[0] = time.time()
+                    return True
+            except Exception as e:
+                log(f"Auth error (attempt {attempt+1}): {e}")
+            if attempt == 0:
+                time.sleep(1)
+    # Fallback: use cached token if available
+    if _utoken[0]:
+        return True
+    _utoken[0] = ""
+    return False
+
 
 _cached_pid = [None]
 def get_pid():
@@ -340,6 +329,13 @@ def delete_remote_reminder_record(data: dict):
     except Exception as e:
         log(f"Delete error: {e}")
         raise HTTPException(500, str(e))
+
+@app.post("/api/re-login")
+def re_login():
+    ok = refresh(force=True)
+    _cached_pid[0] = None
+    return JSONResponse({"online": ok})
+
 
 @app.get("/api/board-status")
 def board_status():
