@@ -288,14 +288,28 @@ async def board_status():
 @router.get("")
 async def list_board_reminders():
     loop = asyncio.get_event_loop()
-    cache = _load_cache()
+    # Quick TCP check (port 22, 2s timeout) - dont return cache if board offline
+    online = await loop.run_in_executor(None, _quick_online_check)
+    if not online:
+        return []
     try:
         data = await loop.run_in_executor(None, _list_board_from_ssh)
         if data is not None:
             return data
     except:
         pass
-    return cache
+    return []
+
+def _quick_online_check():
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2)
+        result = s.connect_ex((BOARD_HOST, 22))
+        s.close()
+        return result == 0
+    except:
+        return False
 
 
 def _list_board_from_ssh():
