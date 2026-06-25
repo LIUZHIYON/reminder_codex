@@ -7,7 +7,7 @@ import paramiko
 
 router = APIRouter(prefix="/api/board-reminders", tags=["board-reminders"])
 
-BOARD_HOST = "192.168.1.184"
+BOARD_HOST = "192.168.1.187"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
 BOARD_BASE_DIR = "/home/cat/reminder_system"
@@ -47,7 +47,7 @@ def _ssh_exec_py(py_code):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
         sftp = client.open_sftp()
         remote_path = "/tmp/_board_q.py"
         with sftp.open(remote_path, "w") as f:
@@ -70,7 +70,7 @@ def _sftp_get(remote_path, local_path):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
         sftp = client.open_sftp()
         sftp.get(remote_path, local_path)
         sftp.close()
@@ -112,7 +112,7 @@ def _ssh_update_reminder(command_id, new_status, content="", reminder_time=""):
         import paramiko
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
         sftp = client.open_sftp()
         remote_path = "/tmp/_upd_status.py"
         with sftp.open(remote_path, 'w') as f:
@@ -148,7 +148,7 @@ def _ssh_delete_reminder(content, reminder_time):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
         sftp = client.open_sftp()
         remote_path = "/tmp/_del_reminder.py"
         with sftp.open(remote_path, "w") as f:
@@ -295,7 +295,95 @@ async def list_board_reminders():
     try:
         data = await loop.run_in_executor(None, _list_board_from_ssh)
         if data is not None:
-            return data
+            # Also try to add missing reminders from management server
+            try:
+                import urllib.request as _ur2
+                _r2 = _ur2.urlopen("http://127.0.0.1:8001/api/remote-reminders", timeout=5)
+                _rows2 = json.loads(_r2.read()).get("rows", [])
+                _board_set2 = set()
+                for _item in data:
+                    _rt2 = _item.get("reminder_time","").replace("T", " ")
+                    _k2 = ((_item.get("content","") or _item.get("title","")), _rt2)
+                    _board_set2.add(_k2)
+                for _row in _rows2:
+                    if _row.get("status") in ("pending", "sent", "executing", "received", "failed", "completed"):
+                        _rt2 = (_row.get("reminderTime","") or _row.get("reminder_time","")).replace("T", " ")
+                        _stat2 = _row.get("status","")
+                        _ct2 = _row.get("content","") or _row.get("title","")
+                        _rk2 = (_ct2, _rt2)
+                        if _rk2 not in _board_set2:
+                            data.append({
+                                "id": _row.get("id",""),
+                                "command_id": str(_row.get("id","")),
+                                "title": _row.get("title","") or _ct2,
+                                "content": _ct2,
+                                "reminder_time": _rt2,
+                                "status": _stat2,
+                                "repeat_type": _row.get("repeatType","") or _row.get("repeat_type",""),
+                                "board_host": BOARD_HOST,
+                            })
+                        elif _stat2 in ("completed","failed","cancelled"):
+                            for _existing in data:
+                                _ert = str(_existing.get("reminder_time","")).replace("T", " ")
+                                _ek = ((_existing.get("content","") or _existing.get("title","")), _ert)
+                                if _ek == _rk2 and _existing.get("status") not in ("completed","failed","cancelled"):
+                                    _existing["status"] = _stat2
+                                    break
+            except Exception as e:
+                print("Management server fallback error:", e)
+            # Direct remote API fallback (belts-and-suspenders)
+            try:
+                import urllib.request as _ur3
+                _login3 = _ur3.urlopen("http://47.118.26.156:8000/api/v1/aipet/app/auth/13900139000/888888", timeout=5)
+                _tk3 = json.loads(_login3.read()).get("data","")
+                if _tk3:
+                    _remote_req3 = _ur3.Request("http://47.118.26.156:8000/api/v1/aipet/app/reminders/list/3/1/50",
+                        headers={"Authorization": "Bearer " + _tk3})
+                    _remote_resp3 = _ur3.urlopen(_remote_req3, timeout=5)
+                    _remote_rows3 = json.loads(_remote_resp3.read()).get("rows", [])
+                    _board_set3 = set()
+                    for _item in data:
+                        _rt3 = _item.get("reminder_time","").replace("T", " ")
+                        _k3 = ((_item.get("content","") or _item.get("title","")), _rt3)
+                        _board_set3.add(_k3)
+                    for _row in _remote_rows3:
+                        if _row.get("status") in ("pending", "sent", "executing", "received", "failed", "completed"):
+                            _rt3 = (_row.get("reminderTime","") or _row.get("reminder_time","")).replace("T", " ")
+                            _stat3 = _row.get("status","")
+                            _ct3 = _row.get("content","") or _row.get("title","")
+                            _rk3 = (_ct3, _rt3)
+                            if _rk3 not in _board_set3:
+                                data.append({
+                                    "id": _row.get("id",""),
+                                    "command_id": str(_row.get("id","")),
+                                    "title": _row.get("title","") or _ct3,
+                                    "content": _ct3,
+                                    "reminder_time": _rt3,
+                                    "status": _stat3,
+                                    "repeat_type": _row.get("repeatType","") or _row.get("repeat_type",""),
+                                    "board_host": BOARD_HOST,
+                                })
+                            elif _stat3 in ("completed","failed","cancelled"):
+                                for _existing in data:
+                                    _ert3 = str(_existing.get("reminder_time","")).replace("T", " ")
+                                    _ek3 = ((_existing.get("content","") or _existing.get("title","")), _ert3)
+                                    if _ek3 == _rk3 and _existing.get("status") not in ("completed","failed","cancelled"):
+                                        _existing["status"] = _stat3
+                                        break
+            except Exception as e3:
+                print("Direct API fallback error:", e3)
+                print("Management server fallback error:", e)
+            # Dedup by content+reminder_time
+            seen = set()
+            deduped = []
+            for item in data:
+                _rt = str(item.get("reminder_time","")).replace("T", " ")
+                _rk = ((item.get("content","") or item.get("title","")), _rt)
+                _rk_str = str(_rk)
+                if _rk_str not in seen:
+                    seen.add(_rk_str)
+                    deduped.append(item)
+            return deduped
     except:
         pass
     return []
@@ -367,7 +455,7 @@ def _list_board_from_ssh():
         for o in old_cache:
             if o.get("command_id") and str(o.get("id", "")) not in data_ids and id(o) not in merged_ids:
                 data.append(o)
-        # Fallback: query remote API for missing repeat_type
+        # Fallback: query remote API for missing repeat_type + sync pending to board
         try:
             import urllib.request as _ur
             _login = _ur.urlopen("http://47.118.26.156:8000/api/v1/aipet/app/auth/13900139000/888888", timeout=5)
@@ -386,11 +474,62 @@ def _list_board_from_ssh():
                     _cid = str(_item.get("command_id", ""))
                     if _cid and _cid in _rmap and not _item.get("repeat_type"):
                         _item["repeat_type"] = _rmap[_cid]
+                # Sync pending reminders from remote server to board
+                _board_set = set()
+                for _item in data:
+                    _rt = _item.get("reminder_time","").replace("T", " ")
+                    _k = ((_item.get("content","") or _item.get("title","")), _rt)
+                    _board_set.add(_k)
+                for _row in _remote_rows:
+                    if _row.get("status") in ("pending", "sent", "executing", "received", "failed", "completed"):
+                        _rt = _row.get("reminderTime","") or _row.get("reminder_time","")
+                        _ct = _row.get("content","") or _row.get("title","")
+                        _rk = (_ct, _rt.replace("T", " "))
+                        if _rk not in _board_set:
+                            # Push to board Flask API
+                            try:
+                                _push_b = json.dumps({"content":_ct,"reminder_time":_rt}).encode()
+                                _push_r = _ur.Request("http://192.168.1.187:5000/api/reminders/create",
+                                    data=_push_b, headers={"Content-Type":"application/json"}, method="POST")
+                                _ur.urlopen(_push_r, timeout=5)
+                            except:
+                                pass
+                        # Add pending reminder to response data directly
+                        data.append({
+                            "id": _row.get("id",""),
+                            "command_id": str(_row.get("id","")),
+                            "title": _row.get("title","") or _ct,
+                            "content": _ct,
+                            "reminder_time": _rt.replace("T", " ") if isinstance(_rt, str) else _rt,
+                            "status": _row.get("status",""),
+                            "repeat_type": _row.get("repeatType","") or _row.get("repeat_type",""),
+                            "board_host": BOARD_HOST,
+                        })
+                        # Update remote status to sent
+                        try:
+                            _put_b = json.dumps({"status":"sent"}).encode()
+                            _put_r = _ur.Request("http://47.118.26.156:8000/api/v1/aipet/app/reminders/"+str(_row.get("id","")),
+                                data=_put_b, headers={"Authorization":"Bearer "+_tk,"Content-Type":"application/json"}, method="PUT")
+                            _ur.urlopen(_put_r, timeout=5)
+                        except:
+                            pass
         except:
             pass
+        # Dedup before saving cache to prevent accumulation
+        seen = set()
+        deduped = []
+        for item in data:
+            _rt = str(item.get("reminder_time","")).replace("T", " ")
+            _rk = ((item.get("content","") or item.get("title","")), _rt)
+            _rk_str = str(_rk)
+            if _rk_str not in seen:
+                seen.add(_rk_str)
+                deduped.append(item)
+        data = deduped
         _save_cache(data)
         return data
-    except Exception:
+    except Exception as e:
+        print("_list_board_from_ssh error:", e)
         return None
 
 @router.delete("/{reminder_id}")

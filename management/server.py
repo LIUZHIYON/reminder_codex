@@ -71,7 +71,7 @@ def _push_to_board(title, rtime):
     try:
         import http.client
         _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.184",5000,timeout=3)
+        _conn = http.client.HTTPConnection("192.168.1.187",5000,timeout=3)
         _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
         _conn.getresponse().read(); _conn.close()
     except: pass
@@ -175,6 +175,17 @@ def send(data: dict):
     r = rq.post(f"{API}/aipet/app/reminders/{pid}", headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
                 json=create_payload, timeout=10)
     result = r.json()
+    if not result.get("success"):
+        # Retry with fresh token if 401
+        if refresh(force=True):
+            log("Retrying with fresh token...")
+            r = rq.post(f"{API}/aipet/app/reminders/{pid}", headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
+                        json=create_payload, timeout=10)
+            result = r.json()
+            if not result.get("success"):
+                raise HTTPException(500, result.get("msg","Failed"))
+        else:
+            raise HTTPException(500, "Login failed even after retry")
     if not result.get("success"): raise HTTPException(500, result.get("msg","Failed"))
     reminder_id = result.get("data",{}).get("id")
     if not reminder_id: raise HTTPException(500,"No reminder_id in response")
@@ -199,7 +210,7 @@ def send(data: dict):
         _s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _s.settimeout(3)
         try:
-            _s.connect(("192.168.1.184", 5000))
+            _s.connect(("192.168.1.187", 5000))
             _s.close()
             board_online_via_post = True
         except:
@@ -346,7 +357,7 @@ def board_status():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(3)
         try:
-            s.connect(("192.168.1.184", 5000))
+            s.connect(("192.168.1.187", 5000))
             s.close()
             return JSONResponse({"online": True, "method": "direct_flask"})
         except:
@@ -368,6 +379,33 @@ def remote_reminders():
         # Server returns rows at top level: { code, rows: [...], total, ... }
         rows = result.get("rows", [])
         total = result.get("total", 0)
+        # Merge remote status with local cache (board_reminders.json)
+        try:
+            import json as _jm
+            _cache_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "board_reminders.json")
+            if os.path.exists(_cache_path):
+                _cache = _jm.load(open(_cache_path, "r", encoding="utf-8"))
+                _cache_map = {}
+                for _c in _cache:
+                    _cid = str(_c.get("command_id","") or _c.get("id",""))
+                    if _cid:
+                        _cache_map[_cid] = _c.get("status","")
+                    _ct = _c.get("content","") or _c.get("title","")
+                    _cr = (_c.get("reminder_time","") or "").replace("T"," ")
+                    _cache_map[_ct + "|" + _cr] = _c.get("status","")
+                for _r in rows:
+                    _rid = str(_r.get("id",""))
+                    _rc = _r.get("content","") or _r.get("title","")
+                    _rt = (_r.get("reminderTime","") or _r.get("reminder_time","") or "").replace("T"," ")
+                    _rk = _rc + "|" + _rt
+                    _local_st = _cache_map.get(_rid) or _cache_map.get(_rk) or ""
+                    if _local_st and _local_st in ("completed","failed","cancelled","triggered","executing"):
+                        if _r.get("status","") or "" != _local_st:
+                            _r["status"] = _local_st
+                            _rs_val = _r.get("status","") or ""
+                            log(f"Merged status #" + _rid + ": " + _rs_val + " -> " + _local_st + "")
+        except Exception as _me:
+            log(f"Cache merge error: {_me}")
         return JSONResponse({"success": True, "rows": rows, "total": total})
     except Exception as e:
         raise HTTPException(500, str(e))

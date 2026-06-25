@@ -7,7 +7,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PRESENCE_FILE = os.path.join(BASE, "board_presence.json")
 CACHE_FILE = os.path.join(BASE, "board_reminders.json")
 
-BOARD_HOST = "192.168.1.184"
+BOARD_HOST = "192.168.1.187"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
 BOARD_DB_PATH = "/home/cat/reminder_system/data/reminders.db"
@@ -34,7 +34,7 @@ def _ssh_update_status(command_id, new_status):
         import paramiko
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=3)
 
         py_code = (
             "import sqlite3\n"

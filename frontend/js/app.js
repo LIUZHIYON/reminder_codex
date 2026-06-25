@@ -301,7 +301,7 @@ function updateBoardStatusUI(data) {
   if (data.online) {
     dot.className = "board-status-dot on";
     text.textContent = "在线 (" + data.host + ")";
-    count.textContent = "已收到 " + (data.reminder_count || 0) + " 条提醒";
+    /* count from loadBoardReminders() */
   } else {
     dot.className = "board-status-dot off";
     text.textContent = "离线";
@@ -315,6 +315,7 @@ async function loadBoardReminders() {
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     boardReminders = await resp.json();
     renderBoardReminders();
+    var cnt=document.getElementById("boardReminderCount");if(cnt)cnt.textContent="已收到 "+boardReminders.length+" 条提醒";
   } catch (e) {
     console.error("Board load error:", e);
   }
@@ -344,11 +345,11 @@ function renderBoardReminders() {
     return;
   }
   let html = "";
-  for (const r of boardReminders) {
+  for (const r of boardReminders) { try {
     const cid = r.command_id || r.id || "";
     const title = r.title || r.content || "";
-    const time = r.reminder_time ? new Date(r.reminder_time).toLocaleString("zh-CN") : "-";
-    const recv = r.received_at ? new Date(r.received_at).toLocaleString("zh-CN") : "-";
+    const time = r.reminder_time ? String(r.reminder_time).replace("T", " ") : "-";
+    const recv = r.received_at ? String(r.received_at).replace("T", " ").substring(0, 16) : "-";
     const fpath = r.file_path || "";
     const status = r.status || "received";
     html += '<div class="reminder-card">';
@@ -362,7 +363,7 @@ function renderBoardReminders() {
     html += '<div class="actions">';
     html += '<button class="btn-icon play-btn" onclick="playBoardReminder(\x27' + cid + '\x27)" title="试听">🔊</button>';
     html += '<button class="btn-icon delete-btn" onclick="deleteBoardReminder(\x27' + cid + '\x27)" title="删除">🗑️</button>';
-    html += '</div></div>';
+    html += '</div></div>'; } catch(e) { console.error("Render err:", e, r); }
   }
   grid.innerHTML = html;
 }
