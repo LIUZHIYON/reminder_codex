@@ -248,7 +248,7 @@ def update_remote_status(data: dict):
 
 @app.post("/api/cancel-remote-reminder")
 def cancel_remote_reminder(data: dict):
-    """Cancel a reminder: mark as cancelled on server + board."""
+    """Cancel a reminder: mark as cancelled on server + board (no audio playback)."""
     rid = data.get("reminder_id")
     title = data.get("title", "")
     rtime = data.get("reminder_time", "")
@@ -268,13 +268,13 @@ def cancel_remote_reminder(data: dict):
             log(f"Cancel #{rid} remote failed: {result.get('msg','')}, updating local cache")
     except Exception as e:
         log(f"Cancel #{rid} remote error: {e}, updating local cache")
-    # Sync to board via 8000 cache (only for cancel, not restore - to avoid scheduler triggering playback)
-    if new_status == "cancelled":
-        try:
-            rq.post("http://127.0.0.1:8000/api/board-reminders/status-update",
-                json={"command_id": str(rid), "status": new_status, "content": title, "reminder_time": rtime}, timeout=3)
-        except:
-            pass
+    # Sync to board via 8000 cache - use cancelled status directly (not 'restored')
+    local_status = new_status
+    try:
+        rq.post("http://127.0.0.1:8000/api/board-reminders/status-update",
+            json={"command_id": str(rid), "status": local_status, "content": title, "reminder_time": rtime}, timeout=3)
+    except:
+        pass
     return JSONResponse({"success": True, "msg": "Cancelled"})
 
 @app.post("/api/delete-remote-reminder")
@@ -358,11 +358,30 @@ def board_status():
 
 @app.get("/api/remote-reminders")
 def remote_reminders():
-    if not refresh():
+    # Try auth, fall back to cache if fails
+    auth_ok = refresh()
+    pid = get_pid() if auth_ok else None
+    if not auth_ok or not pid:
+        # Fall back to board_reminders.json cache
+        try:
+            _cfb = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "board_reminders.json")
+            if os.path.exists(_cfb):
+                _cfb_data = json.load(open(_cfb, "r", encoding="utf-8"))
+                _fallback_rows = []
+                for _c in _cfb_data:
+                    _fallback_rows.append({
+                        "id": str(_c.get("command_id","") or _c.get("id","")),
+                        "title": _c.get("title","") or _c.get("content",""),
+                        "content": _c.get("content","") or _c.get("title",""),
+                        "reminderTime": _c.get("reminder_time",""),
+                        "status": _c.get("status","received"),
+                        "repeatType": _c.get("repeat_type",""),
+                    })
+                if _fallback_rows:
+                    return JSONResponse({"success": True, "rows": _fallback_rows, "total": len(_fallback_rows)})
+        except Exception as _fe:
+            log(f"Cache fallback error: {_fe}")
         raise HTTPException(500, "Login failed")
-    pid = get_pid()
-    if not pid:
-        raise HTTPException(500, "No device")
     try:
         r = rq.get(f"{API}/aipet/app/reminders/list/{pid}/1/50",
                    headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
@@ -397,6 +416,24 @@ def remote_reminders():
                             log(f"Merged status #" + _rid + ": " + _rs_val + " -> " + _local_st + "")
         except Exception as _me:
             log(f"Cache merge error: {_me}")
+        # Fallback: if remote returned nothing, use board cache data
+        if not rows:
+            try:
+                _cfb = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "board_reminders.json")
+                if os.path.exists(_cfb):
+                    _cfb_data = _jm.load(open(_cfb, "r", encoding="utf-8"))
+                    for _c in _cfb_data:
+                        rows.append({
+                            "id": str(_c.get("command_id","") or _c.get("id","")),
+                            "title": _c.get("title","") or _c.get("content",""),
+                            "content": _c.get("content","") or _c.get("title",""),
+                            "reminderTime": _c.get("reminder_time",""),
+                            "status": _c.get("status",""),
+                            "repeatType": _c.get("repeat_type",""),
+                        })
+                    total = len(rows)
+            except:
+                pass
         return JSONResponse({"success": True, "rows": rows, "total": total})
     except Exception as e:
         raise HTTPException(500, str(e))

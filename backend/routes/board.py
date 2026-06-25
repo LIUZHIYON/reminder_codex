@@ -1,6 +1,6 @@
 import asyncio
 import os, json
-from services.tts import generate_audio_sync
+import threading
 import paramiko
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
@@ -171,36 +171,50 @@ _board_speak_lock = threading.Lock()
 
 
 def _board_speak(text):
-    """Generate TTS on board via espeak-ng, play via paplay."""
-    with _board_speak_lock:
-        text = text.strip()
-        if not text:
-            raise ValueError("Empty text")
-        cli = paramiko.SSHClient()
-        cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        try:
-            cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
-            sf = cli.open_sftp()
-            with sf.open("/tmp/_tts_input.txt", "w") as f:
-                f.write(text.encode("utf-8"))
-            sf.close()
-            _, so, se = cli.exec_command(
-                "pactl set-sink-mute 0 0 2>/dev/null; pactl set-sink-volume 0 50% 2>/dev/null; espeak-ng -v zh -w /tmp/_tts_play.wav -f /tmp/_tts_input.txt 2>&1"
-            )
-            err = se.read().decode().strip()[:200] if se else ""
-            out = so.read().decode().strip()[:200]
-            _, so2, _ = cli.exec_command("wc -c /tmp/_tts_play.wav 2>/dev/null || echo EMPTY")
-            size = so2.read().decode().strip()
-            if size and size.split()[0].isdigit() and int(size.split()[0]) > 100:
-                cli.exec_command("pkill -f paplay 2>/dev/null; pactl set-sink-mute 0 0 2>/dev/null; pactl set-sink-volume 0 50% 2>/dev/null; nohup paplay /tmp/_tts_play.wav > /dev/null 2>&1 &")
-                cli.close()
-                print(f"[BoardSpeak] OK: {text[:30]}...")
+    """Generate TTS on board via doubao TTS (ROS2 Action /voice/speak)."""
+    text = text.strip()
+    if not text:
+        raise ValueError("Empty text")
+    
+    # Escape double quotes for shell inside YAML goal
+    safe = text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "'\\''")
+    
+    # Build ros2 action command - use shell single-quote for YAML
+    cmd = (
+        "source /opt/ros/humble/setup.bash && "
+        "source /home/cat/ros2_ws/install/setup.bash && "
+        "ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak "
+        "'{text: \"" + safe + "\"}' "
+        "--timeout 30 2>&1"
+    )
+    
+    cli = paramiko.SSHClient()
+    cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
+        _, stdout, stderr = cli.exec_command(cmd)
+        import select
+        out = b''
+        while True:
+            r, _, _ = select.select([stdout.channel], [], [], 35)
+            if r:
+                chunk = stdout.channel.recv(8192)
+                if not chunk: break
+                out += chunk
             else:
-                cli.close()
-                raise RuntimeError(f"TTS failed: {err or out}")
-        except Exception as e:
-            print(f"[BoardSpeak] Error: {e}")
-            raise
+                break
+        output = out.decode('utf-8', errors='replace')
+        err = stderr.read().decode('utf-8', errors='replace')[:300]
+        cli.close()
+        
+        if 'SUCCEEDED' in output or 'success' in output.lower():
+            print(f"[BoardSpeak] Doubao TTS OK: {text[:30]}...")
+        else:
+            print(f"[BoardSpeak] TTS output: {(output+err)[:200]}")
+            raise RuntimeError(f"Doubao TTS failed: {(output+err)[:200]}")
+    except Exception as e:
+        print(f"[BoardSpeak] Error: {e}")
+        raise
 
 class BoardReminderSync(BaseModel):
     command_id: str = ""
@@ -305,7 +319,7 @@ async def stop_board_playback():
         cli = paramiko.SSHClient()
         cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
-        cli.exec_command("pactl set-sink-mute 0 1 2>/dev/null; pkill -f paplay 2>/dev/null; pkill -f ffplay 2>/dev/null; pkill -f espeak-ng 2>/dev/null")
+        cli.exec_command("pactl set-sink-mute 0 1 2>/dev/null; pkill -f paplay 2>/dev/null; pkill -f ffplay 2>/dev/null; pkill -f 'ros2 action send_goal' 2>/dev/null; pkill -f espeak-ng 2>/dev/null")
         cli.close()
         return {"success": True}
     except Exception as e:
