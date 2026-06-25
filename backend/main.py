@@ -25,7 +25,6 @@ async def lifespan(app: FastAPI):
     await init_db()
     print(f"[App] Database initialized")
     await start_scheduler()
-    asyncio.create_task(_board_loop())
     print(f"[App] Server starting at http://{config.HOST}:{config.PORT}")
     yield
     await stop_scheduler()
@@ -82,15 +81,3 @@ if __name__ == "__main__":
 
 
 
-async def _board_loop():
-    loop = asyncio.get_event_loop()
-    while True:
-        try:
-            await loop.run_in_executor(None, _run_board_check)
-        except Exception:
-            pass
-        await asyncio.sleep(5)
-
-def _run_board_check():
-    from routes.board_scheduler import check_board_reminders
-    check_board_reminders()

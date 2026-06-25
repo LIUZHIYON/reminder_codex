@@ -402,7 +402,7 @@ async function stopBoardPlayback() {
     const data = await resp.json();
     if (data.success) {
       const btn = document.getElementById('stopPlaybackBtn');
-      if (btn) { btn.textContent = '🔇 已停止'; setTimeout(function() { btn.textContent = '\\uD83D\\uDD0A 关闭喇叭'; }, 3000); }
+      if (btn) { btn.textContent = '🔇 已停止'; setTimeout(function() { btn.textContent = '🔊 关闭喇叭'; }, 3000); }
     }
   } catch(e) { console.error('Stop error:', e); }
 }

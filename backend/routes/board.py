@@ -192,7 +192,7 @@ def _board_speak(text):
         size = so2.read().decode().strip()
         if size and size.split()[0].isdigit() and int(size.split()[0]) > 100:
             # Play via paplay in background
-            cli.exec_command("nohup paplay /tmp/_tts_play.wav > /dev/null 2>&1 &")
+            cli.exec_command("pkill -f paplay 2>/dev/null; nohup paplay /tmp/_tts_play.wav > /dev/null 2>&1 &")
             cli.close()
             print(f"[BoardSpeak] OK: {text[:30]}...")
         else:
@@ -297,7 +297,7 @@ async def stop_board_playback():
         cli = paramiko.SSHClient()
         cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
-        cli.exec_command("pkill -f paplay 2>/dev/null; pkill -f aplay 2>/dev/null")
+        cli.exec_command("pkill -f paplay 2>/dev/null; pkill -f ffplay 2>/dev/null; pkill -f espeak-ng 2>/dev/null")
         cli.close()
         return {"success": True}
     except Exception as e:
