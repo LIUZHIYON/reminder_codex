@@ -1,4 +1,4 @@
-﻿import time
+import time
 import json, time, threading, os, sys
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post

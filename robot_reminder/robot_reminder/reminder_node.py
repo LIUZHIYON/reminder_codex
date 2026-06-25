@@ -1,4 +1,4 @@
-﻿"""robot_reminder - 待办事提醒 ROS2 节点
+"""robot_reminder - 待办事提醒 ROS2 节点
 
 功能：
 1. 接收服务器下发的 reminder 命令（通过 WebSocket 链路）

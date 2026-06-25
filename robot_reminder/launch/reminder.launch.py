@@ -1,4 +1,4 @@
-﻿"""reminder.launch.py - 提醒节点启动文件"""
+"""reminder.launch.py - 提醒节点启动文件"""
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument

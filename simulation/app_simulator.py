@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """模拟 APP - 通过 HTTP API 下发提醒命令
 
 用法:

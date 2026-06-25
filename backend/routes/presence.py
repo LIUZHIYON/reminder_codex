@@ -1,4 +1,4 @@
-﻿import os, json, logging
+import os, json, logging
 from datetime import datetime, timedelta
 
 log = logging.getLogger(__name__)

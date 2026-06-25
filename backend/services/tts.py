@@ -1,4 +1,4 @@
-﻿import os
+import os
 import asyncio
 import subprocess
 from config import AUDIO_DIR
@@ -69,7 +69,7 @@ def _try_powershell(text, reminder_id):
             f"$s.Speak('{text.replace(chr(39), chr(39)+chr(39))}'); "
             "$s.Dispose()"
         )
-        subprocess.run(["powershell","-NoProfile","-Command",script], check=True, timeout=30,
+        subprocess.run(["powershell","-NoProfile","-Command",script], check=True, timeout=10,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if os.path.getsize(audio_path) > 1000:
             print(f"[TTS] PowerShell: OK")

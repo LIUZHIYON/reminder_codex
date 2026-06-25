@@ -1,4 +1,4 @@
-﻿import json, time, threading, sqlite3, os, sys, logging
+import json, time, threading, sqlite3, os, sys, logging
 
 logging.basicConfig(level=logging.INFO, format="[WS] %(asctime)s %(message)s")
 log = logging.getLogger(__name__)

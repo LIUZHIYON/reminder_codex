@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """模拟设备节点 - 通过 WebSocket 连接到服务器，处理提醒命令
 
 用法:

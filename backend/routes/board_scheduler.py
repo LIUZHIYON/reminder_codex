@@ -1,4 +1,4 @@
-﻿import os, json, sys
+import os, json, sys
 from datetime import datetime, timedelta
 
 def check_board_reminders():
