@@ -284,6 +284,23 @@ ssh cat@192.168.1.226 "sudo systemctl restart board-ws-client"
 ## 更新日志
 
 ### 2026-06-25
+#### 🔧 token刷新机制重写 + 重新登录按钮
+**问题：** 管理服务器 token 过期后发送提醒失败（“用户token已失效”），重新登录按钮无法修复。
+**原因：** 远程 API 的 `/myinfo` 接口对过期 token 有宽限期（返回 200 OK），但 POST 写接口没有。`refresh()` 通过 `/myinfo` 验证认为 token 有效，实际写操作却失败。
+**修复：**
+- 完全移除 `/myinfo` 验证方式，改为每 30 秒主动登录获取新 token
+- 登录失败（如频率限制）时回退到缓存 token
+- 管理页面添加“重新登录”按钮和 `/api/re-login` 接口
+
+#### 🔧 板子提醒显示 repeat_type
+**问题：** 新发送的提醒在 8000 页面板子提醒标签中不显示重复类型（daily/weekly/monthly）。
+**原因：** 管理服务器 WebSocket 无法连接（板子已占线），`_sync_to_8000` 不会被调用，`repeatType` 无法同步到 8000 缓存。
+**修复：**
+- `_list_board_from_ssh()` 新增远程 API 回退：merge 后直接查询远程 API 获取缺失的 `repeatType`
+- merge 逻辑第 2 段（command_id 匹配）增加 `repeat_type` 复制
+- merge 时 `if o.get("repeat_type"):` → `if "repeat_type" in o:` 防止空字符串被跳过
+- 前端 `renderBoardReminders()` 显示 `r.repeatType || r.repeat_type`
+
 #### 🔧 定时器阻塞修复 — 到点自动播放
 **问题：** 板子提醒到时间后未自动播放语音（状态卡在“📨 已下发”）。
 
