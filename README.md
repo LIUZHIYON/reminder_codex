@@ -284,6 +284,15 @@ ssh cat@192.168.1.226 "sudo systemctl restart board-ws-client"
 ## 更新日志
 
 ### 2026-06-25
+#### 🔧 板子离线状态管理
+**问题：** 板子离线时提醒状态不应变化（保持 `pending`），但实际会被 `process_reminders()` 改为 `executing` 并同步到远程服务器。
+**原因：** `process_reminders()` 处理 `received/pending/sent/executing` 状态的提醒，板子离线时不应处理任何非终态提醒。`_update_remote_status()` 也应及时跳过远程更新。
+**修复：**
+- `process_reminders()` 增加板子在线检测：板子离线时跳过所有非终态提醒
+- `_update_remote_status()` 增加 TCP 端口 22 检测：板子离线时跳过远程服务器更新
+- 批量回退远程服务器上所有非终态提醒为 `pending`
+- `list_board_reminders()` 板子离线时返回空列表 `[]`
+
 #### 🔧 token刷新机制重写 + 重新登录按钮
 **问题：** 管理服务器 token 过期后发送提醒失败（“用户token已失效”），重新登录按钮无法修复。
 **原因：** 远程 API 的 `/myinfo` 接口对过期 token 有宽限期（返回 200 OK），但 POST 写接口没有。`refresh()` 通过 `/myinfo` 验证认为 token 有效，实际写操作却失败。
