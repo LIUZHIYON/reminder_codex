@@ -248,47 +248,34 @@ def update_remote_status(data: dict):
 
 @app.post("/api/cancel-remote-reminder")
 def cancel_remote_reminder(data: dict):
-    """Cancel a reminder: mark as cancelled on server + board (only for unplayed reminders)."""
+    """Cancel a reminder: mark as cancelled on server + board."""
     rid = data.get("reminder_id")
     title = data.get("title", "")
     rtime = data.get("reminder_time", "")
     new_status = data.get("new_status", "cancelled")
     if not rid:
         raise HTTPException(400, "reminder_id required")
-    if not refresh():
-        raise HTTPException(500, "Login failed")
+    refresh()  # Try to refresh, but continue even if fails
+    # Try to update remote server status
     try:
-        # Try with current token first, fallback to old phone token
-        result = None
-        for token in [_utoken[0], ""]:
-            if not token:
-                try:
-                    r2 = rq.get(f"{API}/aipet/app/auth/13800138000/888888", timeout=10)
-                    d2 = r2.json()
-                    if d2.get("success"):
-                        token = d2.get("data","")
-                except:
-                    break
-            if not token:
-                break
-            r = rq.put(f"{API}/aipet/app/reminders/{rid}",
-                       headers={"Authorization":f"Bearer {token}","Content-Type":"application/json"},
-                       json={"status":new_status}, timeout=10)
-            result = r.json()
-            if result.get("success"):
-                log(f"Cancel #{rid}: {result.get('msg','')} (token={'current' if token==_utoken[0] else 'old_phone'})")
-                break
-            log(f"Cancel #{rid}: {result.get('msg','')}, trying fallback...")
-        # Sync to board via 8000 cache + SSH
+        r = rq.put(f"{API}/aipet/app/reminders/{rid}",
+                   headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
+                   json={"status":new_status}, timeout=10)
+        result = r.json()
+        if result.get("success"):
+            log(f"Cancel #{rid}: {result.get('msg','')}")
+        else:
+            log(f"Cancel #{rid} remote failed: {result.get('msg','')}, updating local cache")
+    except Exception as e:
+        log(f"Cancel #{rid} remote error: {e}, updating local cache")
+    # Sync to board via 8000 cache (only for cancel, not restore - to avoid scheduler triggering playback)
+    if new_status == "cancelled":
         try:
             rq.post("http://127.0.0.1:8000/api/board-reminders/status-update",
                 json={"command_id": str(rid), "status": new_status, "content": title, "reminder_time": rtime}, timeout=3)
         except:
             pass
-        return JSONResponse({"success": True, "msg": result.get("msg","cache_updated")})
-    except Exception as e:
-        log(f"Cancel error: {e}")
-        raise HTTPException(500, str(e))
+    return JSONResponse({"success": True, "msg": "Cancelled"})
 
 @app.post("/api/delete-remote-reminder")
 def delete_remote_reminder(data: dict):
@@ -403,7 +390,7 @@ def remote_reminders():
                     _rt = (_r.get("reminderTime","") or _r.get("reminder_time","") or "").replace("T"," ")
                     _rk = _rc + "|" + _rt
                     _local_st = _cache_map.get(_rid) or _cache_map.get(_rk) or ""
-                    if _local_st and _local_st in ("completed","failed","cancelled","triggered","executing"):
+                    if _local_st and _local_st in ("completed","failed","triggered","executing"):
                         if _r.get("status","") or "" != _local_st:
                             _r["status"] = _local_st
                             _rs_val = _r.get("status","") or ""
