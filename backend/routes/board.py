@@ -332,6 +332,8 @@ def _list_board_from_ssh():
                     item["status"] = o["status"]
                     if "repeat_type" in o:
                         item["repeat_type"] = o["repeat_type"]
+                    if "repeat_type" in o:
+                        item["repeat_type"] = o["repeat_type"]
             for o in old_cache:
                 matched = False
                 if o.get("reminder_time") and item.get("reminder_time") and o.get("reminder_time") == item.get("reminder_time"):
@@ -351,6 +353,27 @@ def _list_board_from_ssh():
         for o in old_cache:
             if o.get("command_id") and str(o.get("id", "")) not in data_ids and id(o) not in merged_ids:
                 data.append(o)
+        # Fallback: query remote API for missing repeat_type
+        try:
+            import urllib.request as _ur
+            _login = _ur.urlopen("http://47.118.26.156:8000/api/v1/aipet/app/auth/13900139000/888888", timeout=5)
+            _tk = json.loads(_login.read()).get("data","")
+            if _tk:
+                _remote_req = _ur.Request("http://47.118.26.156:8000/api/v1/aipet/app/reminders/list/3/1/50",
+                    headers={"Authorization": "Bearer " + _tk})
+                _remote_resp = _ur.urlopen(_remote_req, timeout=5)
+                _remote_rows = json.loads(_remote_resp.read()).get("rows", [])
+                _rmap = {}
+                for _row in _remote_rows:
+                    _rid = str(_row.get("id", ""))
+                    if _rid:
+                        _rmap[_rid] = _row.get("repeatType", "") or _row.get("repeat_type", "")
+                for _item in data:
+                    _cid = str(_item.get("command_id", ""))
+                    if _cid and _cid in _rmap and not _item.get("repeat_type"):
+                        _item["repeat_type"] = _rmap[_cid]
+        except:
+            pass
         _save_cache(data)
         return data
     except Exception:
