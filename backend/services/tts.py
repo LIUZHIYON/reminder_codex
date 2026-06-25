@@ -18,7 +18,7 @@ def _fix_extension(path, expected_fmt):
         return new_path
     return path
 
-def generate_audio_sync(reminder_id: int, title: str, description: str = "") -> str:
+def generate_audio_sync(reminder_id: int, title: str, description: str = "", custom_text: str = "") -> str:
     text = f"\u53ee\u549a\uff01\u63d0\u9192\u65f6\u95f4\u5230\u5566\uff01{title}"
     if description:
         text += f"\u3002{description}"

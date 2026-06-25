@@ -99,6 +99,14 @@ def _update_remote_status(command_id, new_status):
         # 8001 might not be running, which is ok
         log.debug(f"Remote update failed: {e}")
 
+def _play_on_board_tts(title, content):
+    text = (content or title or "").strip()
+    if not text:
+        print("[BoardTTS] Empty text, skipping")
+        return
+    from routes.board import _board_speak
+    _board_speak(text)
+
 def process_reminders():
     if not os.path.exists(CACHE_FILE):
         return
@@ -167,19 +175,30 @@ def process_reminders():
             changed_records.append((r.get("command_id",""), "executing"))
             print(f"[Presence] Executing: {title} #{dc+1}")
             continue
-        aid = abs(hash(title + rt)) % 100000
+        # Try board TTS first
         try:
-            from services.tts import generate_audio_sync as _gen
-            ap = _gen(aid, title, content)
-            if ap:
-                from player import player as _pl
-                _pl.play(ap, True)
-                r["status"] = "completed"
-                r["audio_file"] = ap
-                changed_records.append((r.get("command_id",""), "completed"))
-                print(f"[Presence] Completed: {title}")
-        except Exception as e:
-            print(f"[Presence] TTS error: {e}")
+            _play_on_board_tts(title, content)
+            r["status"] = "completed"
+            r["audio_file"] = ""
+            changed_records.append((r.get("command_id",""), "completed"))
+            print(f"[Presence] BoardTTS: {title}")
+        except Exception as e_tts:
+            print(f"[Presence] BoardTTS error: {e_tts}, falling back to local")
+            # Fallback: generate TTS and play locally
+            aid = abs(hash(title + rt)) % 100000
+            try:
+                from services.tts import generate_audio_sync as _gen
+                ap = _gen(aid, title, content)
+                if ap:
+                    from player import player as _pl
+                    _pl.play(ap, True)
+                    r["status"] = "completed"
+                    r["audio_file"] = ap
+                    changed_records.append((r.get("command_id",""), "completed"))
+                    print(f"[Presence] Completed(local): {title}")
+            except Exception as e_local:
+                print(f"[Presence] Local TTS error: {e_local}")
+                raise
     if changed_records:
         json.dump(recs, open(CACHE_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
         for cid, new_st in changed_records:

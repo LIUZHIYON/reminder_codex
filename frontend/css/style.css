@@ -635,3 +635,11 @@ body {
   background: #dfe6e9 !important;
   color: #636e72 !important;
 }
+
+.stop-btn {
+  background: #ef4444; color: white; border: none; padding: 8px 16px;
+  border-radius: 6px; cursor: pointer; font-size: 14px; margin: 8px 0;
+  display: inline-block;
+}
+.stop-btn:hover { background: #dc2626; }
+#stopBtnContainer { text-align: center; margin: 10px 0; }

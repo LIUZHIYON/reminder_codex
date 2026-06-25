@@ -1,9 +1,11 @@
 import asyncio
 import os, json
+from services.tts import generate_audio_sync
+import paramiko
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import paramiko
+from services.tts import generate_audio_sync
 
 router = APIRouter(prefix="/api/board-reminders", tags=["board-reminders"])
 
@@ -109,7 +111,7 @@ def _ssh_update_reminder(command_id, new_status, content="", reminder_time=""):
     py_code = "\n".join(lines)
 
     try:
-        import paramiko
+        from services.tts import generate_audio_sync
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
@@ -165,6 +167,47 @@ def _ssh_delete_reminder(content, reminder_time):
     except Exception as e:
         print("SSH delete failed:", e)
         return "0"
+
+def _board_speak(text):
+    """Generate TTS locally, upload WAV to board, play via paplay."""
+    import os
+    text = text.strip()
+    if not text:
+        raise ValueError("Empty text")
+    # Generate TTS audio locally with custom_text (no prefix/suffix)
+    aid = abs(hash(text)) % 100000
+    from config import AUDIO_DIR
+    cached_path = os.path.join(AUDIO_DIR, f"board_{aid}.wav")
+    audio_path = cached_path
+    # Skip generation if cached WAV already exists
+    if not os.path.exists(cached_path):
+        audio_path = generate_audio_sync(aid, text, custom_text=text)
+        if not audio_path or not os.path.exists(audio_path):
+            raise RuntimeError("TTS generation failed")
+        # Rename to cached name for future reuse
+        if audio_path != cached_path:
+            try:
+                import shutil
+                shutil.copy2(audio_path, cached_path)
+                audio_path = cached_path
+            except:
+                pass
+    # Upload to board and play
+    cli = paramiko.SSHClient()
+    cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        sf = cli.open_sftp()
+        sf.put(audio_path, "/tmp/_tts_play.wav")
+        sf.close()
+        # Set volume to 50%, play once
+        cli.exec_command("pactl set-sink-volume 0 50% 2>/dev/null; nohup paplay /tmp/_tts_play.wav > /dev/null 2>&1 &")
+        cli.close()
+        print(f"[BoardSpeak] OK: {text[:30]}...")
+    except Exception as e:
+        print(f"[BoardSpeak] Error: {e}")
+        raise
+
 
 class BoardReminderSync(BaseModel):
     command_id: str = ""
@@ -251,6 +294,20 @@ async def delete_board_record(data: dict):
     _save_cache(records)
     deleted = _ssh_delete_reminder(content_text, reminder_time)
     return {"success": True, "deleted": deleted}
+
+@router.post("/stop")
+async def stop_board_playback():
+    """Stop all audio playback on the board."""
+    import paramiko
+    try:
+        cli = paramiko.SSHClient()
+        cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        cli.exec_command("pkill -f paplay 2>/dev/null; pkill -f aplay 2>/dev/null")
+        cli.close()
+        return {"success": True}
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
 
 @router.get("/presence")
 async def get_presence():
@@ -555,10 +612,30 @@ async def play_board_reminder(reminder_id: int):
     local_dir = os.path.join(project_dir, "audio")
     os.makedirs(local_dir, exist_ok=True)
 
-    # Try to get content from board
+    # Try to get content from board (search by id or command_id)
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content, audio_file FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); print(row[1] if row and row[1] else ''); conn.close()"
     out, err = _ssh_exec_py(q)
-    if not out:
+    if not out or not out.strip():
+        # Try by command_id (string) instead
+        q2 = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content, audio_file FROM reminders WHERE command_id = ?',('" + str(reminder_id) + "',)); row=c.fetchone(); print(row[0] if row else ''); print(row[1] if row and row[1] else ''); conn.close()"
+        out, err = _ssh_exec_py(q2)
+    if not out or not out.strip():
+        # Try from cache (board_reminders.json)
+        try:
+            _cf = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "board_reminders.json")
+            if os.path.exists(_cf):
+                _cache = json.load(open(_cf, "r", encoding="utf-8"))
+                _sid = str(reminder_id)
+                for _cr in _cache:
+                    if str(_cr.get("command_id","")) == _sid or str(_cr.get("id","")) == _sid:
+                        _ct = _cr.get("content","") or _cr.get("title","")
+                        if _ct:
+                            _board_speak(_ct)
+                            return {"success": True, "message": "Board TTS: " + _ct[:30]}
+        except HTTPException:
+            raise  # Let HTTPException through (from _board_speak)
+        except Exception as _cache_e:
+            print(f"[CacheFallback] Error: {_cache_e}")
         raise HTTPException(404, detail="Reminder not found on board")
     lines = out.strip().split("\n")
     content = lines[0] if lines else ""
@@ -574,27 +651,29 @@ async def play_board_reminder(reminder_id: int):
             player.play(local_path, False)
             return {"success": True, "message": "Playing from board: " + os.path.basename(local_path)}
 
-    # No board audio - generate TTS locally
+    # Play through board TTS
     if not content:
         raise HTTPException(404, detail="No content to play")
-    from services.tts import generate_audio_sync
-    audio_path = generate_audio_sync(reminder_id, content)
-    if not audio_path or not os.path.exists(audio_path):
-        raise HTTPException(500, detail="TTS generation failed")
-    from player import player
-    player.play(audio_path, False)
-    return {"success": True, "message": "Playing TTS: " + os.path.basename(audio_path)}
+    try:
+        _board_speak(content)
+        return {"success": True, "message": "Board TTS: " + content[:30]}
+    except Exception as e_play:
+        raise HTTPException(500, detail="Board TTS failed: " + str(e_play))
 
 @router.post("/{reminder_id}/generate-tts")
 async def generate_board_tts(reminder_id: int):
     """Generate TTS audio locally for a board reminder."""
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); conn.close()"
     out, err = _ssh_exec_py(q)
+    if not out or not out.strip():
+        # Try by command_id
+        q2 = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content FROM reminders WHERE command_id = ?',('" + str(reminder_id) + "',)); row=c.fetchone(); print(row[0] if row else ''); conn.close()"
+        out, err = _ssh_exec_py(q2)
     content = (out or "").strip()
     if not content:
         raise HTTPException(404, detail="Reminder not found on board")
-    from services.tts import generate_audio_sync
-    audio_path = generate_audio_sync(reminder_id, content)
-    if not audio_path or not os.path.exists(audio_path):
-        raise HTTPException(500, detail="TTS generation failed")
-    return {"success": True, "audio_file": audio_path, "content": content}
+    try:
+        _board_speak(content)
+        return {"success": True, "message": "Board TTS sent", "content": content}
+    except Exception as e_tts:
+        raise HTTPException(500, detail="Board TTS failed: " + str(e_tts))

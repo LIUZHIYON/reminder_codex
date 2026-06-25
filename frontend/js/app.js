@@ -272,6 +272,13 @@ function switchTab(tab) {
     document.querySelector(".tab:last-child").classList.add("active");
     document.querySelector(".main").style.display = "none";
     document.getElementById("boardContent").style.display = "block";
+    var sbDiv = document.getElementById("stopBtnContainer");
+    if (!sbDiv) {
+      sbDiv = document.createElement("div");
+      sbDiv.id = "stopBtnContainer";
+      sbDiv.innerHTML = "<button id="stopPlaybackBtn" class="stop-btn" onclick="stopBoardPlayback()">🔊 关闭喇叭</button>";
+      document.getElementById("boardContent").insertBefore(sbDiv, document.getElementById("boardContent").firstChild);
+    }
     loadBoardStatus();
     loadBoardReminders();
     loadBoardPresence();
@@ -382,6 +389,17 @@ async function playBoardReminder(cmdId) {
     alert("播放失败: " + e.message);
     document.getElementById("nowPlaying").classList.remove("active");
   }
+}
+
+async function stopBoardPlayback() {
+  try {
+    const resp = await fetch(BOARD_API + '/stop', { method: 'POST' });
+    const data = await resp.json();
+    if (data.success) {
+      const btn = document.getElementById('stopPlaybackBtn');
+      if (btn) { btn.textContent = '🔇 已停止'; setTimeout(function() { btn.textContent = '🔊 关闭喇叭'; }, 3000); }
+    }
+  } catch(e) { console.error('Stop error:', e); }
 }
 
 async function deleteBoardReminder(cmdId) {
