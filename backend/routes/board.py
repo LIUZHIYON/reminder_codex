@@ -5,7 +5,6 @@ import paramiko
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from services.tts import generate_audio_sync
 
 router = APIRouter(prefix="/api/board-reminders", tags=["board-reminders"])
 

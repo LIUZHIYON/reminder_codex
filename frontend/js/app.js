@@ -276,7 +276,12 @@ function switchTab(tab) {
     if (!sbDiv) {
       sbDiv = document.createElement("div");
       sbDiv.id = "stopBtnContainer";
-      sbDiv.innerHTML = "<button id="stopPlaybackBtn" class="stop-btn" onclick="stopBoardPlayback()">🔊 关闭喇叭</button>";
+      var btn = document.createElement("button");
+      btn.id = "stopPlaybackBtn";
+      btn.className = "stop-btn";
+      btn.onclick = stopBoardPlayback;
+      btn.textContent = "\u5173\u95ed\u5587\u53ed";
+      sbDiv.appendChild(btn);
       document.getElementById("boardContent").insertBefore(sbDiv, document.getElementById("boardContent").firstChild);
     }
     loadBoardStatus();
@@ -397,7 +402,7 @@ async function stopBoardPlayback() {
     const data = await resp.json();
     if (data.success) {
       const btn = document.getElementById('stopPlaybackBtn');
-      if (btn) { btn.textContent = '🔇 已停止'; setTimeout(function() { btn.textContent = '🔊 关闭喇叭'; }, 3000); }
+      if (btn) { btn.textContent = '🔇 已停止'; setTimeout(function() { btn.textContent = '\\uD83D\\uDD0A 关闭喇叭'; }, 3000); }
     }
   } catch(e) { console.error('Stop error:', e); }
 }
