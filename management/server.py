@@ -335,7 +335,20 @@ def delete_remote_reminder_record(data: dict):
             json={"command_id": str(rid), "content": title, "reminder_time": rtime}, timeout=5)
     except:
         pass
-    return JSONResponse({"success": True, "msg": "Deleted (local)"})
+    # Track locally deleted IDs for filtering in remote_reminders
+    try:
+        import json as _jm
+        _del_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deleted_ids.json")
+        _deleted = []
+        if os.path.exists(_del_file):
+            _deleted = _jm.load(open(_del_file, "r", encoding="utf-8"))
+        if str(rid) not in _deleted:
+            _deleted.append(str(rid))
+            _deleted = _deleted[-500:]
+            _jm.dump(_deleted, open(_del_file, "w", encoding="utf-8"), ensure_ascii=False)
+    except:
+        pass
+    return JSONResponse({"success": True, "msg": "Deleted"})
 
 @app.post("/api/re-login")
 def re_login():
@@ -374,6 +387,9 @@ def remote_reminders():
                 _cfb_data = json.load(open(_cfb, "r", encoding="utf-8"))
                 _fallback_rows = []
                 for _c in _cfb_data:
+                    _cid = str(_c.get("command_id","") or "")
+                    if _cid.startswith("rmd_"):
+                        continue
                     _fallback_rows.append({
                         "id": str(_c.get("command_id","") or _c.get("id","")),
                         "title": _c.get("title","") or _c.get("content",""),
@@ -394,6 +410,19 @@ def remote_reminders():
         # Server returns rows at top level: { code, rows: [...], total, ... }
         rows = result.get("rows", [])
         total = result.get("total", 0)
+        # Filter out rmd_ WS delivery IDs
+        rows = [r for r in rows if not str(r.get("id","") or "").startswith("rmd_")]
+        total = len(rows)
+        # Filter out locally deleted IDs
+        try:
+            import json as _jm
+            _del_f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deleted_ids.json")
+            if os.path.exists(_del_f):
+                _deleted_ids = _jm.load(open(_del_f, "r", encoding="utf-8"))
+                rows = [r for r in rows if str(r.get("id","")) not in _deleted_ids]
+                total = len(rows)
+        except Exception as _dfe:
+            print(f"Deleted filter error: {_dfe}")
         # Merge remote status with local cache (board_reminders.json)
         try:
             import json as _jm

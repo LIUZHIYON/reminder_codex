@@ -488,14 +488,14 @@ def _list_board_from_ssh():
             k = str(item.get("id", ""))
             if k and k in old_map:
                 o = old_map[k]
-                if o.get("status") in ("completed", "failed", "executing", "cancelled"):
+                if o.get("status") in ("sent", "completed", "failed", "executing", "cancelled"):
                     item["status"] = o["status"]
                     if "repeat_type" in o:
                         item["repeat_type"] = o["repeat_type"]
             ck = str(item.get("command_id", ""))
             if ck and ck in old_map:
                 o = old_map[ck]
-                if o.get("status") in ("completed", "failed", "executing", "cancelled"):
+                if o.get("status") in ("sent", "completed", "failed", "executing", "cancelled"):
                     item["status"] = o["status"]
                     if "repeat_type" in o:
                         item["repeat_type"] = o["repeat_type"]
@@ -503,7 +503,7 @@ def _list_board_from_ssh():
                         item["repeat_type"] = o["repeat_type"]
             for o in old_cache:
                 matched = False
-                if o.get("reminder_time") and item.get("reminder_time") and o.get("reminder_time") == item.get("reminder_time"):
+                if o.get("reminder_time") and item.get("reminder_time") and str(o.get("reminder_time","")).replace("T"," ").strip() == str(item.get("reminder_time","")).replace("T"," ").strip():
                     if o.get("command_id") and (o.get("title") or o.get("content")) == (item.get("content") or item.get("title")):
                         matched = True
                     elif o.get("status") in ("completed", "failed", "executing", "cancelled", "sent"):

@@ -93,6 +93,7 @@ async function loadRemoteReminders() {
     if (!resp.ok) { lst.innerHTML = "<p style='color:red;text-align:center;padding:20px'>Error: " + resp.status + "</p>"; return; }
     var data = await resp.json();
     var rows = Array.isArray(data.rows) ? data.rows : [];
+    rows = rows.filter(function(r) { return !String(r.id || "").startsWith("rmd_"); });
     if (!rows.length) { lst.innerHTML = "<p style='text-align:center;padding:20px;color:#888'>No reminders</p>"; return; }
     var sm = {pending:"pending",sent:"sent",executing:"executing",completed:"completed",failed:"failed",cancelled:"cancelled"};
     var h = "<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse;font-size:12px'>";
