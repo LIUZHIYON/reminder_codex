@@ -1,0 +1,6 @@
+fix: 修复播放失败和提示横幅不消失bug
+
+- _board_speak(): select 超时由35s减为15s
+- _board_speak(): 接受 Goal accepted 作为成功信号
+- play_board_reminder(): 缓存增加 _board_id 字段匹配
+- 前端: 播放失败时立即清除"正在播放"横幅
