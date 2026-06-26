@@ -1,4 +1,4 @@
-﻿# 叮叮提醒 (DingDing Reminder)
+# 叮叮提醒 (DingDing Reminder)
 ```
 一个基于 Web 的提醒管理工具，支持**到点自动播放语音提醒 + 板子协同工作**。支持本地 Windows 运行，通过 AI Pet 远程服务器与 RK3576 板子通信。
 ```
@@ -344,3 +344,42 @@ ssh cat@192.168.1.226 "sudo systemctl restart board-ws-client"
 - 参数使用 `encodeURIComponent/decodeURIComponent` 安全传递
 - 增加 `resp.ok` 状态码检查和 `Array.isArray` 健壮性判断
 - 修复 `chr(34)` 未求值和重复sentTime列的问题
+
+### 2026-06-26
+#### 🔧 全面切换 TTS：从微软 edge-tts 到板子 doubao TTS
+**问题：** 项目实际使用微软 TTS（edge-tts / PowerShell TTS）播放语音，而非板子支持的 doubao TTS（豆包语音合成）。声音不对，且未利用板子已部署的 ROS2 语音合成管线。
+
+**原因分析：** 项目存在两处独立的 TTS 代码路径，均未接入 doubao TTS：
+
+1. **PC 端调度器**（ackend/services/scheduler.py）→ 到期提醒调用 generate_audio_sync() → ackend/services/tts.py → 依次尝试 PowerShell TTS、pyttsx3、gTTS、edge-tts（全部是微软/云端 TTS）
+2. **板子端 TTS 服务**（/home/cat/reminder_system/app/tts_service.py → config.py 中 TTS_PROVIDER = "edge" → 走 edge-tts
+
+虽然 ackend/routes/board.py 中的 _board_speak() 此前已改为调用 os2 action send_goal /voice/speak（doubao TTS），但**调度器从未调用 _board_speak()**，而是直接走本地微软 TTS 路径，导致板子喇叭从未被触发。
+
+**修复方案：**
+
+| 修复位置 | 修改内容 | 方法 |
+|---------|---------|------|
+| **板子 	ts_service.py** | 新增 speak_doubao() 方法 | 通过 SSH/SFTP 在板子端添加，调用 os2 action send_goal /voice/speak robot_voice_bridge/action/Speak |
+| **板子 config.py** | TTS_PROVIDER = "doubao" | 修改板子端配置文件，使板子 Flask 调度器使用 doubao TTS |
+| **PC scheduler.py** | 到期提醒优先调用 _board_speak() | 在调度循环中先检查板子在线状态，在线则调用 ROS2 Action（doubao TTS），离线才回退本地微软 TTS |
+| **板子 speak_doubao()** | 缩短超时 30s → 15s | 防止 voice_bridge 音频完成信号未返回时阻塞调度器 |
+| **板子 	ts_service.py** | 修复 speak_espeak 缩进错误 | 注入 doubao 代码时导致 def speak_espeak 缩进从 4 空格变为 8 空格，板端 un.py 启动时 SyntaxError，修复后恢复运行 |
+
+**doubao TTS 调用链路：**
+`
+PC scheduler / 板子 scheduler
+  → _board_speak() / speak_doubao()
+  → paramiko SSH exec_command / subprocess.run(['bash', '-c', cmd])
+  → 'source .../setup.bash && ros2 action send_goal /voice/speak ...'
+  → voice_bridge → doubao_tts_node (synthesize) → audio_node (play via ALSA)
+  → 板子喇叭播报
+`
+
+**验证方法：** 板子上 os2 action list 可看到 /voice/speak；直接运行测试命令板子喇叭可听到声音。/tts/log/ 日志显示 "合成完成: N 样本 M 秒"。
+
+**相关文件：**
+- ackend/services/scheduler.py — 调度器优先调用 _board_speak()
+- ackend/routes/board.py — _board_speak() 使用 os2 action send_goal /voice/speak
+- /home/cat/reminder_system/app/tts_service.py — 新增 speak_doubao() 方法
+- /home/cat/reminder_system/app/config.py — TTS_PROVIDER = "doubao"
