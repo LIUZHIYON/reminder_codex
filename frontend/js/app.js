@@ -358,7 +358,7 @@ function renderBoardReminders() {
   }
   let html = "";
   for (const r of boardReminders) { try {
-    const cid = r.command_id || r.id || "";
+    const cid = r.id || r.command_id || "";
     const title = r.title || r.content || "";
     const time = r.reminder_time ? String(r.reminder_time).replace("T", " ") : "-";
     const recv = r.received_at ? String(r.received_at).replace("T", " ").substring(0, 16) : "-";

@@ -35,7 +35,7 @@ def _ssh_exec(cmd):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=2)
         _, stdout, stderr = client.exec_command(cmd)
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
@@ -48,7 +48,7 @@ def _ssh_exec_py(py_code):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=2)
         sftp = client.open_sftp()
         remote_path = "/tmp/_board_q.py"
         with sftp.open(remote_path, "w") as f:
@@ -71,7 +71,7 @@ def _sftp_get(remote_path, local_path):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=2)
         sftp = client.open_sftp()
         sftp.get(remote_path, local_path)
         sftp.close()
@@ -113,7 +113,7 @@ def _ssh_update_reminder(command_id, new_status, content="", reminder_time=""):
         from services.tts import generate_audio_sync
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=2)
         sftp = client.open_sftp()
         remote_path = "/tmp/_upd_status.py"
         with sftp.open(remote_path, 'w') as f:
@@ -149,7 +149,7 @@ def _ssh_delete_reminder(content, reminder_time):
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        client.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=2)
         sftp = client.open_sftp()
         remote_path = "/tmp/_del_reminder.py"
         with sftp.open(remote_path, "w") as f:
@@ -171,51 +171,43 @@ _board_speak_lock = threading.Lock()
 
 
 def _board_speak(text):
-    """Generate TTS on board via doubao TTS (ROS2 Action /voice/speak)."""
+    """Fire-and-forget: speak on board via speak_doubao(), return immediately."""
     text = text.strip()
     if not text:
-        raise ValueError("Empty text")
-    
-    # Escape double quotes for shell inside YAML goal
-    safe = text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "'\\''")
-    
-    # Build ros2 action command - use shell single-quote for YAML
-    cmd = (
-        "source /opt/ros/humble/setup.bash && "
-        "source /home/cat/ros2_ws/install/setup.bash && "
-        "ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak "
-        "'{text: \"" + safe + "\"}' "
-        "--timeout 30 2>&1"
+        return
+    s39 = chr(39); s92 = chr(92); s34 = chr(34)
+    safe = text.replace(s92, s92*2).replace(s39, s92+s39).replace(s34, s92+s34)
+    pay = (
+        "import sys, time\n"
+        "sys.path.insert(0, '/home/cat/reminder_system')\n"
+        "from app.tts_service import TTSService\n"
+        "import types\n"
+        "cfg = types.SimpleNamespace()\n"
+        "cfg.BASE_DIR = '/home/cat/reminder_system'\n"
+        "cfg.TTS_PROVIDER = 'doubao'\n"
+        "cfg.AUDIO_PLAYER = 'auto'\n"
+        "cfg.AUDIO_DEVICE = 'default'\n"
+        "cfg.AUDIO_MAX_RETRIES = 0\n"
+        "cfg.EDGE_TTS_TIMEOUT = 5\n"
+        "cfg.TTS_VOICE = 'zh-CN-XiaoxiaoNeural'\n"
+        "cfg.TTS_API_URL = ''\n"
+        "tts = TTSService(cfg)\n"
+        "ok, msg = tts.speak_doubao(" + s39 + safe + s39 + ")\n"
+        "import os; os._exit(0)\n"
     )
-    
-    cli = paramiko.SSHClient()
-    cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
-        cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=10)
-        _, stdout, stderr = cli.exec_command(cmd)
-        import select
-        out = b''
-        while True:
-            r, _, _ = select.select([stdout.channel], [], [], 35)
-            if r:
-                chunk = stdout.channel.recv(8192)
-                if not chunk: break
-                out += chunk
-            else:
-                break
-        output = out.decode('utf-8', errors='replace')
-        err = stderr.read().decode('utf-8', errors='replace')[:300]
+        cli = paramiko.SSHClient()
+        cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        sf = cli.open_sftp()
+        with sf.open('/tmp/_bdsp.py', 'w') as f: f.write(pay)
+        sf.close()
+        cli.exec_command('nohup python3 /tmp/_bdsp.py > /dev/null 2>&1 &')
+        import time; time.sleep(0.5)
         cli.close()
-        
-        if 'SUCCEEDED' in output or 'success' in output.lower():
-            print(f"[BoardSpeak] Doubao TTS OK: {text[:30]}...")
-        else:
-            print(f"[BoardSpeak] TTS output: {(output+err)[:200]}")
-            raise RuntimeError(f"Doubao TTS failed: {(output+err)[:200]}")
+        print(f"[BoardSpeak] Fired: " + text[:30] + '...')
     except Exception as e:
-        print(f"[BoardSpeak] Error: {e}")
-        raise
-
+        print(f"[BoardSpeak] Error: " + str(e))
 class BoardReminderSync(BaseModel):
     command_id: str = ""
     title: str
@@ -318,7 +310,7 @@ async def stop_board_playback():
     try:
         cli = paramiko.SSHClient()
         cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+        cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=2)
         cli.exec_command("pactl set-sink-mute 0 1 2>/dev/null; pkill -f paplay 2>/dev/null; pkill -f ffplay 2>/dev/null; pkill -f 'ros2 action send_goal' 2>/dev/null; pkill -f espeak-ng 2>/dev/null")
         cli.close()
         return {"success": True}
@@ -628,7 +620,23 @@ async def play_board_reminder(reminder_id: int):
     local_dir = os.path.join(project_dir, "audio")
     os.makedirs(local_dir, exist_ok=True)
 
-    # Try to get content from board (search by id or command_id)
+    # Try from cache first (faster), then SSH fallback
+    out = ""
+    err = ""
+    try:
+        _cf = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "board_reminders.json")
+        if os.path.exists(_cf):
+            _cache = json.load(open(_cf, "r", encoding="utf-8"))
+            _sid = str(reminder_id)
+            for _cr in _cache:
+                if str(_cr.get("command_id","") or "") == _sid or str(_cr.get("id","") or "") == _sid:
+                    _ct = _cr.get("content","") or _cr.get("title","")
+                    if _ct:
+                        _board_speak(_ct)
+                        return {"success": True, "message": "Board TTS: " + _ct[:30]}
+    except Exception as _ce:
+        print(f"[Play] Cache lookup error: {_ce}")
+    # SSH fallback: try to get content from board (search by id or command_id)
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content, audio_file FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); print(row[1] if row and row[1] else ''); conn.close()"
     out, err = _ssh_exec_py(q)
     if not out or not out.strip():
@@ -646,10 +654,12 @@ async def play_board_reminder(reminder_id: int):
                     if str(_cr.get("command_id","")) == _sid or str(_cr.get("id","")) == _sid:
                         _ct = _cr.get("content","") or _cr.get("title","")
                         if _ct:
-                            _board_speak(_ct)
-                            return {"success": True, "message": "Board TTS: " + _ct[:30]}
-        except HTTPException:
-            raise  # Let HTTPException through (from _board_speak)
+                            try:
+                                _board_speak(_ct)
+                                return {"success": True, "message": "Board TTS: " + _ct[:30]}
+                            except:
+                                pass
+            # raise removed - falls through to except
         except Exception as _cache_e:
             print(f"[CacheFallback] Error: {_cache_e}")
         raise HTTPException(404, detail="Reminder not found on board")
@@ -667,7 +677,7 @@ async def play_board_reminder(reminder_id: int):
             player.play(local_path, False)
             return {"success": True, "message": "Playing from board: " + os.path.basename(local_path)}
 
-    # Play through board TTS
+    # Play through board TTS only
     if not content:
         raise HTTPException(404, detail="No content to play")
     try:
