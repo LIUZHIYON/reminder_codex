@@ -196,7 +196,7 @@ def _board_speak(text):
         import select
         out = b''
         while True:
-            r, _, _ = select.select([stdout.channel], [], [], 15)
+            r, _, _ = select.select([stdout.channel], [], [], 35)
             if r:
                 chunk = stdout.channel.recv(8192)
                 if not chunk: break
@@ -207,7 +207,7 @@ def _board_speak(text):
         err = stderr.read().decode('utf-8', errors='replace')[:300]
         cli.close()
         
-        if 'SUCCEEDED' in output or 'Goal accepted' in output or 'success' in output.lower():
+        if 'SUCCEEDED' in output or 'success' in output.lower():
             print(f"[BoardSpeak] Doubao TTS OK: {text[:30]}...")
         else:
             print(f"[BoardSpeak] TTS output: {(output+err)[:200]}")
@@ -643,7 +643,7 @@ async def play_board_reminder(reminder_id: int):
                 _cache = json.load(open(_cf, "r", encoding="utf-8"))
                 _sid = str(reminder_id)
                 for _cr in _cache:
-                    if str(_cr.get("command_id","") or "") == _sid or str(_cr.get("id","") or "") == _sid or str(_cr.get("_board_id","") or "") == _sid:
+                    if str(_cr.get("command_id","")) == _sid or str(_cr.get("id","")) == _sid:
                         _ct = _cr.get("content","") or _cr.get("title","")
                         if _ct:
                             _board_speak(_ct)

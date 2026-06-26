@@ -387,7 +387,6 @@ async function playBoardReminder(cmdId) {
     const resp = await fetch(BOARD_API + "/" + cmdId + "/play", { method: "POST" });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      document.getElementById("nowPlaying").classList.remove("active");
       alert("播放失败: " + (err.detail || ""));
     }
     setTimeout(function() { document.getElementById("nowPlaying").classList.remove("active"); }, 5000);
