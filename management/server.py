@@ -71,7 +71,7 @@ def _push_to_board(title, rtime):
     try:
         import http.client
         _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.187",5000,timeout=3)
+        _conn = http.client.HTTPConnection("192.168.1.70",5000,timeout=3)
         _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
         _conn.getresponse().read(); _conn.close()
     except: pass
@@ -210,7 +210,7 @@ def send(data: dict):
         _s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _s.settimeout(3)
         try:
-            _s.connect(("192.168.1.187", 5000))
+            _s.connect(("192.168.1.70", 5000))
             _s.close()
             board_online_via_post = True
         except:
@@ -348,7 +348,7 @@ def board_status():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(3)
         try:
-            s.connect(("192.168.1.187", 5000))
+            s.connect(("192.168.1.70", 5000))
             s.close()
             return JSONResponse({"online": True, "method": "direct_flask"})
         except:

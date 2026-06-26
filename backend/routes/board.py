@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/board-reminders", tags=["board-reminders"])
 
-BOARD_HOST = "192.168.1.187"
+BOARD_HOST = "192.168.1.70"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
 BOARD_BASE_DIR = "/home/cat/reminder_system"
@@ -562,7 +562,7 @@ def _list_board_from_ssh():
                             # Push to board Flask API
                             try:
                                 _push_b = json.dumps({"content":_ct,"reminder_time":_rt}).encode()
-                                _push_r = _ur.Request("http://192.168.1.187:5000/api/reminders/create",
+                                _push_r = _ur.Request("http://192.168.1.70:5000/api/reminders/create",
                                     data=_push_b, headers={"Content-Type":"application/json"}, method="POST")
                                 _ur.urlopen(_push_r, timeout=5)
                             except:
