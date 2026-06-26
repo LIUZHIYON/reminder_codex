@@ -171,43 +171,54 @@ _board_speak_lock = threading.Lock()
 
 
 def _board_speak(text):
-    """Fire-and-forget: speak on board via speak_doubao(), return immediately."""
+    """Fire-and-forget: speak on board via rclpy action client (doubao TTS).
+    Uploads Python script with embedded text, executes with nohup.
+    """
     text = text.strip()
     if not text:
         return
-    s39 = chr(39); s92 = chr(92); s34 = chr(34)
-    safe = text.replace(s92, s92*2).replace(s39, s92+s39).replace(s34, s92+s34)
-    pay = (
-        "import sys, time\n"
-        "sys.path.insert(0, '/home/cat/reminder_system')\n"
-        "from app.tts_service import TTSService\n"
-        "import types\n"
-        "cfg = types.SimpleNamespace()\n"
-        "cfg.BASE_DIR = '/home/cat/reminder_system'\n"
-        "cfg.TTS_PROVIDER = 'doubao'\n"
-        "cfg.AUDIO_PLAYER = 'auto'\n"
-        "cfg.AUDIO_DEVICE = 'default'\n"
-        "cfg.AUDIO_MAX_RETRIES = 0\n"
-        "cfg.EDGE_TTS_TIMEOUT = 5\n"
-        "cfg.TTS_VOICE = 'zh-CN-XiaoxiaoNeural'\n"
-        "cfg.TTS_API_URL = ''\n"
-        "tts = TTSService(cfg)\n"
-        "ok, msg = tts.speak_doubao(" + s39 + safe + s39 + ")\n"
-        "import os; os._exit(0)\n"
-    )
     try:
         cli = paramiko.SSHClient()
         cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
-        sf = cli.open_sftp()
-        with sf.open('/tmp/_bdsp.py', 'w') as f: f.write(pay)
-        sf.close()
-        cli.exec_command('nohup python3 /tmp/_bdsp.py > /dev/null 2>&1 &')
-        import time; time.sleep(0.5)
+        sftp = cli.open_sftp()
+        safe = repr(text)
+        py_code = (
+            "import rclpy, sys, json\n"
+            "from rclpy.action import ActionClient\n"
+            "from robot_voice_bridge.action import Speak\n"
+            "rclpy.init()\n"
+            "node = rclpy.create_node(\"bd_speak\")\n"
+            "ac = ActionClient(node, Speak, \"/voice/speak\")\n"
+            "if not ac.wait_for_server(timeout_sec=8):\n"
+            "    sys.exit(1)\n"
+            "print(\"starting...\")\n"
+            "goal = Speak.Goal()\n"
+            "goal.text = " + safe + "\n"
+            "send_future = ac.send_goal_async(goal)\n"
+            "rclpy.spin_until_future_complete(node, send_future, timeout_sec=20)\n"
+            "if send_future.done() and send_future.result().accepted:\n"
+            "    result_future = send_future.result().get_result_async()\n"
+            "    rclpy.spin_until_future_complete(node, result_future, timeout_sec=30)\n"
+            "    if result_future.done():\n"
+            "        r = result_future.result().result\n"
+            "        print(json.dumps({\"success\": r.success, \"msg\": r.message}))\n"
+            "node.destroy_node()\n"
+            "rclpy.shutdown()\n"
+        )
+        with sftp.open("/tmp/_speak_rclpy.py", "wb") as f:
+            f.write(py_code.encode("utf-8"))
+        sftp.close()
+        # Source ROS2 env, then run Python script
+        nohup_cmd = ("nohup bash -c 'amixer set Speaker 90% unmute 2>/dev/null; amixer set Headphone 90% unmute 2>/dev/null; source /opt/ros/humble/setup.bash && source /home/cat/ros2_ws/install/setup.bash && python3 -u /tmp/_speak_rclpy.py' > /tmp/_speak_run.log 2>&1 &")
+        cli.exec_command(nohup_cmd)
+        import time; time.sleep(0.3)
         cli.close()
-        print(f"[BoardSpeak] Fired: " + text[:30] + '...')
+        print("[BoardSpeak] Fired rclpy action: " + text[:30] + "...")
     except Exception as e:
-        print(f"[BoardSpeak] Error: " + str(e))
+        print("[BoardSpeak] Error: " + str(e))
+
+
 class BoardReminderSync(BaseModel):
     command_id: str = ""
     title: str
