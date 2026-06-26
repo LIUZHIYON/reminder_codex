@@ -173,50 +173,114 @@ _board_speak_lock = threading.Lock()
 def _board_speak(text):
     """Fire-and-forget: speak on board via rclpy action client (doubao TTS).
     Uploads Python script with embedded text, executes with nohup.
+    Uses lock to prevent overlapping speech; unique filenames/node names per call.
     """
     text = text.strip()
     if not text:
         return
-    try:
-        cli = paramiko.SSHClient()
-        cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
-        sftp = cli.open_sftp()
-        safe = repr(text)
-        py_code = (
-            "import rclpy, sys, json\n"
-            "from rclpy.action import ActionClient\n"
-            "from robot_voice_bridge.action import Speak\n"
-            "rclpy.init()\n"
-            "node = rclpy.create_node(\"bd_speak\")\n"
-            "ac = ActionClient(node, Speak, \"/voice/speak\")\n"
-            "if not ac.wait_for_server(timeout_sec=8):\n"
-            "    sys.exit(1)\n"
-            "print(\"starting...\")\n"
-            "goal = Speak.Goal()\n"
-            "goal.text = " + safe + "\n"
-            "send_future = ac.send_goal_async(goal)\n"
-            "rclpy.spin_until_future_complete(node, send_future, timeout_sec=20)\n"
-            "if send_future.done() and send_future.result().accepted:\n"
-            "    result_future = send_future.result().get_result_async()\n"
-            "    rclpy.spin_until_future_complete(node, result_future, timeout_sec=30)\n"
-            "    if result_future.done():\n"
-            "        r = result_future.result().result\n"
-            "        print(json.dumps({\"success\": r.success, \"msg\": r.message}))\n"
-            "node.destroy_node()\n"
-            "rclpy.shutdown()\n"
-        )
-        with sftp.open("/tmp/_speak_rclpy.py", "wb") as f:
-            f.write(py_code.encode("utf-8"))
-        sftp.close()
-        # Source ROS2 env, then run Python script
-        nohup_cmd = ("nohup bash -c 'amixer set Speaker 90% unmute 2>/dev/null; amixer set Headphone 90% unmute 2>/dev/null; source /opt/ros/humble/setup.bash && source /home/cat/ros2_ws/install/setup.bash && python3 -u /tmp/_speak_rclpy.py' > /tmp/_speak_run.log 2>&1 &")
-        cli.exec_command(nohup_cmd)
-        import time; time.sleep(0.3)
-        cli.close()
-        print("[BoardSpeak] Fired rclpy action: " + text[:30] + "...")
-    except Exception as e:
-        print("[BoardSpeak] Error: " + str(e))
+    with _board_speak_lock:
+        try:
+            import uuid
+            uid = uuid.uuid4().hex[:8]
+            script_path = f"/tmp/_speak_rclpy_{uid}.py"
+            log_path = f"/tmp/_speak_run_{uid}.log"
+            lock_path = "/tmp/_speak.lock"
+            node_name = f"bd_speak_{uid}"
+
+            cli = paramiko.SSHClient()
+            cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
+            sftp = cli.open_sftp()
+            safe = repr(text)
+            py_code = (
+                "# -*- coding: utf-8 -*-\n"
+                "import os, sys, json, time as _t\n"
+                "\n"
+                "# --- Atomic file lock to prevent concurrent speech ---\n"
+                "LOCK_FILE = " + repr(lock_path) + "\n"
+                "LOCK_TIMEOUT = 60  # max seconds to wait for previous speak\n"
+                "pid_bytes = str(os.getpid()).encode()\n"
+                "deadline = _t.time() + LOCK_TIMEOUT\n"
+                "locked = False\n"
+                "while not locked:\n"
+                "    try:\n"
+                "        # Atomic: only one process can create the lock file\n"
+                "        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)\n"
+                "        os.write(fd, pid_bytes)\n"
+                "        os.close(fd)\n"
+                "        locked = True\n"
+                "    except FileExistsError:\n"
+                "        # Lock exists - check if holder is still alive\n"
+                "        try:\n"
+                "            with open(LOCK_FILE, 'r') as lf:\n"
+                "                old_pid = int(lf.read().strip())\n"
+                "            os.kill(old_pid, 0)  # signal 0 just checks existence\n"
+                "            # Old process still alive - wait\n"
+                "            if _t.time() >= deadline:\n"
+                "                print(json.dumps({\"success\": False, \"msg\": \"speak lock timeout waiting for pid \" + str(old_pid)}))\n"
+                "                sys.exit(0)\n"
+                "            _t.sleep(0.5)\n"
+                "        except (ValueError, OSError, FileNotFoundError):\n"
+                "            # Old process dead or lock corrupt - remove stale lock\n"
+                "            try:\n"
+                "                os.remove(LOCK_FILE)\n"
+                "            except OSError:\n"
+                "                pass\n"
+                "            # Retry immediately (next iteration will try O_CREAT|O_EXCL)\n"
+                "try:\n"
+                "    import rclpy\n"
+                "    from rclpy.action import ActionClient\n"
+                "    from robot_voice_bridge.action import Speak\n"
+                "    rclpy.init()\n"
+                "    node = rclpy.create_node(" + repr(node_name) + ")\n"
+                "    ac = ActionClient(node, Speak, \"/voice/speak\")\n"
+                "    if not ac.wait_for_server(timeout_sec=10):\n"
+                "        print(json.dumps({\"success\": False, \"msg\": \"server not available\"}))\n"
+                "        node.destroy_node()\n"
+                "        rclpy.shutdown()\n"
+                "        sys.exit(1)\n"
+                "    print(\"starting...\")\n"
+                "    goal = Speak.Goal()\n"
+                "    goal.text = " + safe + "\n"
+                "    send_future = ac.send_goal_async(goal)\n"
+                "    rclpy.spin_until_future_complete(node, send_future, timeout_sec=20)\n"
+                "    if send_future.done() and send_future.result().accepted:\n"
+                "        result_future = send_future.result().get_result_async()\n"
+                "        rclpy.spin_until_future_complete(node, result_future, timeout_sec=90)\n"
+                "        if result_future.done():\n"
+                "            r = result_future.result().result\n"
+                "            print(json.dumps({\"success\": r.success, \"msg\": r.message}))\n"
+                "        else:\n"
+                "            print(json.dumps({\"success\": False, \"msg\": \"result timeout\"}))\n"
+                "    else:\n"
+                "        print(json.dumps({\"success\": False, \"msg\": \"goal rejected\"}))\n"
+                "    node.destroy_node()\n"
+                "    rclpy.shutdown()\n"
+                "finally:\n"
+                "    try:\n"
+                "        os.remove(LOCK_FILE)\n"
+                "    except OSError:\n"
+                "        pass\n"
+            )
+            with sftp.open(script_path, "wb") as f:
+                f.write(py_code.encode("utf-8"))
+            sftp.close()
+            # Source ROS2 env, then run Python script; auto-cleanup after execution
+            # Note: amixer unmute removed from per-call script; if needed, run separately once
+            nohup_cmd = (
+                "nohup bash -c '"
+                "source /opt/ros/humble/setup.bash && "
+                "source /home/cat/ros2_ws/install/setup.bash && "
+                "python3 -u " + script_path + "; "
+                "rm -f " + script_path +
+                "' > " + log_path + " 2>&1 &"
+            )
+            cli.exec_command(nohup_cmd)
+            import time; time.sleep(0.3)
+            cli.close()
+            print("[BoardSpeak] Fired rclpy action: " + text[:30] + "...")
+        except Exception as e:
+            print("[BoardSpeak] Error: " + str(e))
 
 
 class BoardReminderSync(BaseModel):

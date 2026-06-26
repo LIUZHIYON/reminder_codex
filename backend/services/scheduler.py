@@ -11,10 +11,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def check_and_play_reminders():
+    # Process board reminders (board_reminders.json) — handles 📨 sent/received/pending/executing
+    # This is a SEPARATE data source from local reminders (reminders.db).
+    # If you hear the same reminder twice, check if it exists in BOTH board_reminders.json
+    # AND reminders.db — those are two different reminder entries.
     try:
         from routes.board_scheduler import check_board_reminders
         check_board_reminders()
-    except:
+    except Exception:
         pass
     """Check for due reminders and play them."""
     due_list = []
@@ -53,8 +57,9 @@ async def check_and_play_reminders():
                 from routes.board import _quick_online_check, _board_speak
                 online = await loop.run_in_executor(None, _quick_online_check)
                 if online:
-                    await loop.run_in_executor(None, _board_speak, item['title'])
-                    print(f"[Scheduler] Board doubao TTS: {item['title'][:30]}...")
+                    speak_text = (item['title'] + '，' + item['description']).strip('，')
+                    await loop.run_in_executor(None, _board_speak, speak_text)
+                    print(f"[Scheduler] Board doubao TTS: {speak_text[:30]}...")
                     played = True
             except Exception as ee:
                 print(f"[Scheduler] Board TTS failed: {ee}, fallback local")
