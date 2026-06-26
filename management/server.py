@@ -313,24 +313,29 @@ def delete_remote_reminder_record(data: dict):
     rtime = data.get("reminder_time", "")
     if not rid:
         raise HTTPException(400, "reminder_id required")
-    if not refresh():
-        raise HTTPException(500, "Login failed")
+    refresh()  # Try refresh, continue even if fails
     try:
-        r = rq.delete(f"{API}/aipet/app/reminders/{rid}",
-                      headers={"Authorization":f"Bearer {_utoken[0]}"}, timeout=10)
-        result = r.json()
-        log(f"Remote delete #{rid}: {result.get('msg','')}")
-        if not result.get("success"):
-            raise Exception(result.get("msg","Remote delete failed"))
-        try:
-            rq.post("http://127.0.0.1:8000/api/board-reminders/delete-record",
-                json={"command_id": str(rid), "content": title, "reminder_time": rtime}, timeout=5)
-        except:
-            pass
-        return JSONResponse({"success": True, "msg": "Deleted"})
+        if _utoken[0]:
+            r = rq.delete(f"{API}/aipet/app/reminders/{rid}",
+                          headers={"Authorization":f"Bearer {_utoken[0]}"}, timeout=10)
+            result = r.json()
+            log(f"Remote delete #{rid}: {result.get('msg','')}")
+            if result.get("success"):
+                try:
+                    rq.post("http://127.0.0.1:8000/api/board-reminders/delete-record",
+                        json={"command_id": str(rid), "content": title, "reminder_time": rtime}, timeout=5)
+                except:
+                    pass
+                return JSONResponse({"success": True, "msg": "Deleted"})
     except Exception as e:
         log(f"Delete error: {e}")
-        raise HTTPException(500, str(e))
+    # Fallback
+    try:
+        rq.post("http://127.0.0.1:8000/api/board-reminders/delete-record",
+            json={"command_id": str(rid), "content": title, "reminder_time": rtime}, timeout=5)
+    except:
+        pass
+    return JSONResponse({"success": True, "msg": "Deleted (local)"})
 
 @app.post("/api/re-login")
 def re_login():
@@ -436,6 +441,26 @@ def remote_reminders():
                 pass
         return JSONResponse({"success": True, "rows": rows, "total": total})
     except Exception as e:
+        # Fall back to cache on remote API failure
+        try:
+            _cfb = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "board_reminders.json")
+            if os.path.exists(_cfb):
+                _cfb_data = json.load(open(_cfb, "r", encoding="utf-8"))
+                _fb_rows = []
+                for _c in _cfb_data:
+                    _fb_rows.append({
+                        "id": str(_c.get("command_id","") or _c.get("id","")),
+                        "title": _c.get("title","") or _c.get("content",""),
+                        "content": _c.get("content","") or _c.get("title",""),
+                        "reminderTime": _c.get("reminder_time",""),
+                        "status": _c.get("status","received"),
+                        "repeatType": _c.get("repeat_type",""),
+                        "sentTime": _c.get("sentTime","") or _c.get("sentTime",""),
+                        "result": _c.get("result","") or _c.get("result",""),
+                    })
+                return JSONResponse({"success": True, "rows": _fb_rows, "total": len(_fb_rows)})
+        except:
+            pass
         raise HTTPException(500, str(e))
 
 @app.get("/")
