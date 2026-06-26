@@ -354,17 +354,20 @@ ssh cat@192.168.1.226 "sudo systemctl restart board-ws-client"
 1. **PC 端调度器**（ackend/services/scheduler.py）→ 到期提醒调用 generate_audio_sync() → ackend/services/tts.py → 依次尝试 PowerShell TTS、pyttsx3、gTTS、edge-tts（全部是微软/云端 TTS）
 2. **板子端 TTS 服务**（/home/cat/reminder_system/app/tts_service.py → config.py 中 TTS_PROVIDER = "edge" → 走 edge-tts
 
-虽然 ackend/routes/board.py 中的 _board_speak() 此前已改为调用 os2 action send_goal /voice/speak（doubao TTS），但**调度器从未调用 _board_speak()**，而是直接走本地微软 TTS 路径，导致板子喇叭从未被触发。
+虽然 ackend/routes/board.py 中的 _board_speak() 此前已改为调用 
+os2 action send_goal /voice/speak（doubao TTS），但**调度器从未调用 _board_speak()**，而是直接走本地微软 TTS 路径，导致板子喇叭从未被触发。
 
 **修复方案：**
 
 | 修复位置 | 修改内容 | 方法 |
 |---------|---------|------|
-| **板子 	ts_service.py** | 新增 speak_doubao() 方法 | 通过 SSH/SFTP 在板子端添加，调用 os2 action send_goal /voice/speak robot_voice_bridge/action/Speak |
+| **板子 	ts_service.py** | 新增 speak_doubao() 方法 | 通过 SSH/SFTP 在板子端添加，调用 
+os2 action send_goal /voice/speak robot_voice_bridge/action/Speak |
 | **板子 config.py** | TTS_PROVIDER = "doubao" | 修改板子端配置文件，使板子 Flask 调度器使用 doubao TTS |
 | **PC scheduler.py** | 到期提醒优先调用 _board_speak() | 在调度循环中先检查板子在线状态，在线则调用 ROS2 Action（doubao TTS），离线才回退本地微软 TTS |
 | **板子 speak_doubao()** | 缩短超时 30s → 15s | 防止 voice_bridge 音频完成信号未返回时阻塞调度器 |
-| **板子 	ts_service.py** | 修复 speak_espeak 缩进错误 | 注入 doubao 代码时导致 def speak_espeak 缩进从 4 空格变为 8 空格，板端 un.py 启动时 SyntaxError，修复后恢复运行 |
+| **板子 	ts_service.py** | 修复 speak_espeak 缩进错误 | 注入 doubao 代码时导致 def speak_espeak 缩进从 4 空格变为 8 空格，板端 
+un.py 启动时 SyntaxError，修复后恢复运行 |
 
 **doubao TTS 调用链路：**
 `
@@ -376,10 +379,21 @@ PC scheduler / 板子 scheduler
   → 板子喇叭播报
 `
 
-**验证方法：** 板子上 os2 action list 可看到 /voice/speak；直接运行测试命令板子喇叭可听到声音。/tts/log/ 日志显示 "合成完成: N 样本 M 秒"。
+**验证方法：** 板子上 
+os2 action list 可看到 /voice/speak；直接运行测试命令板子喇叭可听到声音。/tts/log/ 日志显示 "合成完成: N 样本 M 秒"。
 
 **相关文件：**
 - ackend/services/scheduler.py — 调度器优先调用 _board_speak()
-- ackend/routes/board.py — _board_speak() 使用 os2 action send_goal /voice/speak
+- ackend/routes/board.py — _board_speak() 使用 
+os2 action send_goal /voice/speak
 - /home/cat/reminder_system/app/tts_service.py — 新增 speak_doubao() 方法
 - /home/cat/reminder_system/app/config.py — TTS_PROVIDER = "doubao"
+
+### 2026-06-26 (后续修复)
+#### 重写板子播放：从 ROS2 Action 改为 Topic pub/sub + aplay 阻塞播放
+
+**问题：** 板子播放声音断断续续、重叠、播放两次。
+
+**新方案：** SSH阻塞执行脚本 → rclpy订阅/tts/audio + 发布/tts/text → 收集PCM → 保存WAV → aplay阻塞播放 → 返回结果。电脑端_lock确保串行，无需板子端锁文件。
+
+**修改文件：** backend/routes/board.py (+137/-79), backend/services/scheduler.py
