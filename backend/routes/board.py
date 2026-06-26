@@ -171,116 +171,174 @@ _board_speak_lock = threading.Lock()
 
 
 def _board_speak(text):
-    """Fire-and-forget: speak on board via rclpy action client (doubao TTS).
-    Uploads Python script with embedded text, executes with nohup.
-    Uses lock to prevent overlapping speech; unique filenames/node names per call.
+    """Blocking: speak on board via ROS2 /tts/text topic + aplay.
+    
+    Flow: SSH → upload script → run script (blocking):
+      1. rclpy.init, subscribe /tts/audio
+      2. Publish text to /tts/text
+      3. Collect audio chunks → save WAV
+      4. amixer unmute → aplay (blocking) → cleanup
+    
+    Returns True on success, False on failure.
+    Computer-side lock serializes calls; SSH blocks until playback finishes.
+    No lock files, no nohup, no action client.
     """
     text = text.strip()
     if not text:
-        return
+        return False
     with _board_speak_lock:
         try:
-            import uuid
+            import uuid, time
             uid = uuid.uuid4().hex[:8]
-            script_path = f"/tmp/_speak_rclpy_{uid}.py"
-            log_path = f"/tmp/_speak_run_{uid}.log"
-            lock_path = "/tmp/_speak.lock"
-            node_name = f"bd_speak_{uid}"
+            script_path = f"/tmp/_speak_{uid}.py"
+            wav_path = f"/tmp/_speak_{uid}.wav"
+            log_path = f"/tmp/_speak_{uid}.log"
 
             cli = paramiko.SSHClient()
             cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
             sftp = cli.open_sftp()
+
+            # Build Python script for the board
             safe = repr(text)
             py_code = (
+                "#!/usr/bin/env python3\n"
                 "# -*- coding: utf-8 -*-\n"
-                "import os, sys, json, time as _t\n"
+                "import rclpy, sys, time, struct, wave, subprocess, json\n"
+                "from rclpy.node import Node\n"
+                "from std_msgs.msg import String\n"
+                "from robot_interface.msg import AudioData\n"
                 "\n"
-                "# --- Atomic file lock to prevent concurrent speech ---\n"
-                "LOCK_FILE = " + repr(lock_path) + "\n"
-                "LOCK_TIMEOUT = 60  # max seconds to wait for previous speak\n"
-                "pid_bytes = str(os.getpid()).encode()\n"
-                "deadline = _t.time() + LOCK_TIMEOUT\n"
-                "locked = False\n"
-                "while not locked:\n"
-                "    try:\n"
-                "        # Atomic: only one process can create the lock file\n"
-                "        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)\n"
-                "        os.write(fd, pid_bytes)\n"
-                "        os.close(fd)\n"
-                "        locked = True\n"
-                "    except FileExistsError:\n"
-                "        # Lock exists - check if holder is still alive\n"
-                "        try:\n"
-                "            with open(LOCK_FILE, 'r') as lf:\n"
-                "                old_pid = int(lf.read().strip())\n"
-                "            os.kill(old_pid, 0)  # signal 0 just checks existence\n"
-                "            # Old process still alive - wait\n"
-                "            if _t.time() >= deadline:\n"
-                "                print(json.dumps({\"success\": False, \"msg\": \"speak lock timeout waiting for pid \" + str(old_pid)}))\n"
-                "                sys.exit(0)\n"
-                "            _t.sleep(0.5)\n"
-                "        except (ValueError, OSError, FileNotFoundError):\n"
-                "            # Old process dead or lock corrupt - remove stale lock\n"
-                "            try:\n"
-                "                os.remove(LOCK_FILE)\n"
-                "            except OSError:\n"
-                "                pass\n"
-                "            # Retry immediately (next iteration will try O_CREAT|O_EXCL)\n"
+                "TEXT = " + safe + "\n"
+                "WAV_PATH = " + repr(wav_path) + "\n"
+                "LOG_PATH = " + repr(log_path) + "\n"
+                "\n"
+                "def log(msg):\n"
+                "    with open(LOG_PATH, 'a') as f:\n"
+                "        f.write(msg + '\\n')\n"
+                "\n"
                 "try:\n"
-                "    import rclpy\n"
-                "    from rclpy.action import ActionClient\n"
-                "    from robot_voice_bridge.action import Speak\n"
                 "    rclpy.init()\n"
-                "    node = rclpy.create_node(" + repr(node_name) + ")\n"
-                "    ac = ActionClient(node, Speak, \"/voice/speak\")\n"
-                "    if not ac.wait_for_server(timeout_sec=10):\n"
-                "        print(json.dumps({\"success\": False, \"msg\": \"server not available\"}))\n"
-                "        node.destroy_node()\n"
-                "        rclpy.shutdown()\n"
-                "        sys.exit(1)\n"
-                "    print(\"starting...\")\n"
-                "    goal = Speak.Goal()\n"
-                "    goal.text = " + safe + "\n"
-                "    send_future = ac.send_goal_async(goal)\n"
-                "    rclpy.spin_until_future_complete(node, send_future, timeout_sec=20)\n"
-                "    if send_future.done() and send_future.result().accepted:\n"
-                "        result_future = send_future.result().get_result_async()\n"
-                "        rclpy.spin_until_future_complete(node, result_future, timeout_sec=90)\n"
-                "        if result_future.done():\n"
-                "            r = result_future.result().result\n"
-                "            print(json.dumps({\"success\": r.success, \"msg\": r.message}))\n"
-                "        else:\n"
-                "            print(json.dumps({\"success\": False, \"msg\": \"result timeout\"}))\n"
-                "    else:\n"
-                "        print(json.dumps({\"success\": False, \"msg\": \"goal rejected\"}))\n"
+                "    node = Node('speak_" + uid + "')\n"
+                "    chunks = []\n"
+                "    last_audio = [time.time()]\n"
+                "    channels = [1]\n"
+                "    rate = [24000]\n"
+                "\n"
+                "    def on_audio(msg):\n"
+                "        last_audio[0] = time.time()\n"
+                "        channels[0] = msg.channels\n"
+                "        rate[0] = msg.rate\n"
+                "        for s in msg.data:\n"
+                "            chunks.append(struct.pack('<H', s))\n"
+                "\n"
+                "    sub = node.create_subscription(AudioData, '/tts/audio', on_audio, 10)\n"
+                "    pub = node.create_publisher(String, '/tts/text', 10)\n"
+                "\n"
+                "    # Publish text\n"
+                "    time.sleep(0.3)\n"
+                "    msg = String()\n"
+                "    msg.data = TEXT\n"
+                "    pub.publish(msg)\n"
+                "    log('PUB: ' + TEXT[:50])\n"
+                "\n"
+                "    # Spin and collect audio (max 20s, 3s silence = done)\n"
+                "    from rclpy.executors import SingleThreadedExecutor\n"
+                "    executor = SingleThreadedExecutor()\n"
+                "    executor.add_node(node)\n"
+                "    deadline = time.time() + 25\n"
+                "    while time.time() < deadline:\n"
+                "        executor.spin_once(timeout_sec=0.1)\n"
+                "        if len(chunks) > 0 and time.time() - last_audio[0] > 3.0:\n"
+                "            break\n"
+                "    executor.shutdown()\n"
                 "    node.destroy_node()\n"
                 "    rclpy.shutdown()\n"
-                "finally:\n"
+                "\n"
+                "    if not chunks:\n"
+                "        log('NO_AUDIO')\n"
+                "        print('NO_AUDIO', flush=True)\n"
+                "        sys.exit(1)\n"
+                "\n"
+                "    # Save WAV\n"
+                "    raw = b''.join(chunks)\n"
+                "    with wave.open(WAV_PATH, 'wb') as wf:\n"
+                "        wf.setnchannels(channels[0])\n"
+                "        wf.setsampwidth(2)\n"
+                "        wf.setframerate(rate[0])\n"
+                "        wf.writeframes(raw)\n"
+                "    log(f'WAV: {len(raw)} bytes')\n"
+                "\n"
+                "    # Play audio (blocking)\n"
+                "    # Try aplay first, fallback to paplay\n"
+                "    for player in ['aplay', 'paplay']:\n"
+                "        try:\n"
+                "            subprocess.run([player, WAV_PATH], timeout=60, check=True,\n"
+                "                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+                "            log(f'PLAYED via {player}')\n"
+                "            break\n"
+                "        except FileNotFoundError:\n"
+                "            continue\n"
+                "        except subprocess.TimeoutExpired:\n"
+                "            log(f'TIMEOUT: {player}')\n"
+                "    else:\n"
+                "        log('NO_PLAYER')\n"
+                "        print('NO_PLAYER', flush=True)\n"
+                "        sys.exit(1)\n"
+                "\n"
+                "    # Cleanup\n"
                 "    try:\n"
-                "        os.remove(LOCK_FILE)\n"
-                "    except OSError:\n"
+                "        import os as _os\n"
+                "        _os.remove(WAV_PATH)\n"
+                "    except:\n"
                 "        pass\n"
+                "    log('OK')\n"
+                "    print('OK', flush=True)\n"
+                "except Exception as e:\n"
+                "    with open(LOG_PATH, 'a') as f:\n"
+                "        f.write('ERR: ' + str(e) + '\\n')\n"
+                "    print('ERR: ' + str(e), flush=True)\n"
+                "    sys.exit(1)\n"
             )
+
             with sftp.open(script_path, "wb") as f:
                 f.write(py_code.encode("utf-8"))
             sftp.close()
-            # Source ROS2 env, then run Python script; auto-cleanup after execution
-            # Note: amixer unmute removed from per-call script; if needed, run separately once
-            nohup_cmd = (
-                "nohup bash -c '"
+
+            # Run script on board: source ROS2, unmute, run script
+            cmd = (
+                "amixer set Speaker 90% unmute 2>/dev/null; "
+                "amixer set Headphone 90% unmute 2>/dev/null; "
                 "source /opt/ros/humble/setup.bash && "
                 "source /home/cat/ros2_ws/install/setup.bash && "
-                "python3 -u " + script_path + "; "
-                "rm -f " + script_path +
-                "' > " + log_path + " 2>&1 &"
+                "python3 -u " + script_path + " 2>&1; "
+                "rm -f " + script_path + " " + log_path
             )
-            cli.exec_command(nohup_cmd)
-            import time; time.sleep(0.3)
+            transport = cli.get_transport()
+            if transport:
+                transport.set_keepalive(30)
+            _, stdout, stderr = cli.exec_command(cmd, timeout=90)
+            out = stdout.read().decode("utf-8", errors="replace").strip()
+            err = stderr.read().decode("utf-8", errors="replace").strip()[:200]
             cli.close()
-            print("[BoardSpeak] Fired rclpy action: " + text[:30] + "...")
+
+            if "OK" in out:
+                print("[BoardSpeak] OK: " + text[:30] + "...")
+                return True
+            elif "NO_AUDIO" in out:
+                print("[BoardSpeak] No audio from TTS: " + text[:30] + "...")
+                return False
+            elif "NO_PLAYER" in out:
+                print("[BoardSpeak] No audio player on board: " + text[:30] + "...")
+                return False
+            else:
+                print("[BoardSpeak] Failed: " + text[:30] + "...")
+                if err:
+                    print("  stderr: " + err[:100])
+                return False
         except Exception as e:
             print("[BoardSpeak] Error: " + str(e))
+            return False
 
 
 class BoardReminderSync(BaseModel):
