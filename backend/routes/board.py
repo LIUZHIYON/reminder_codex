@@ -514,15 +514,13 @@ async def delete_board_reminder(reminder_id: int):
 
 @router.post("/{reminder_id}/play")
 async def play_board_reminder(reminder_id: int):
-    """Play board reminder: generate TTS locally if no audio, or download from board."""
+    """Play board reminder via SSH doubao TTS on the board."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     project_dir = os.path.join(base_dir, "..")
     local_dir = os.path.join(project_dir, "audio")
     os.makedirs(local_dir, exist_ok=True)
 
-    # Try from cache first (faster), then SSH fallback
-    out = ""
-    err = ""
+    content_to_play = ""
     try:
         _cf = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "board_reminders.json")
         if os.path.exists(_cf):
@@ -530,52 +528,22 @@ async def play_board_reminder(reminder_id: int):
             _sid = str(reminder_id)
             for _cr in _cache:
                 if str(_cr.get("command_id","") or "") == _sid or str(_cr.get("id","") or "") == _sid:
-                    _ct = _cr.get("content","") or _cr.get("title","")
-                    if _ct:
-                        # Try local PC TTS first (faster), then board
-                        try:
-                            from services.tts import generate_audio_sync as _gen
-                            from player import player as _pl
-                            aid = abs(hash(_ct)) % 100000
-                            ap = _gen(aid, _ct, "")
-                            if ap:
-                                _pl.play(ap, False)
-                                return {"success": True, "message": "Local PC TTS: " + _ct[:30]}
-                        except Exception as _le:
-                            print(f"[Play] Local TTS error: {_le}")
-                        # Fallback to board TTS
-                        try:
-                            _board_speak(_ct)
-                            return {"success": True, "message": "Board TTS: " + _ct[:30]}
-                        except:
-                            raise HTTPException(500, detail="All TTS failed: " + _ct[:20])
+                    content_to_play = _cr.get("content","") or _cr.get("title","")
+                    break
     except Exception as _ce:
         print(f"[Play] Cache lookup error: {_ce}")
-    raise HTTPException(404, detail="Reminder not found on board")
-    lines = out.strip().split("\n")
-    content = lines[0] if lines else ""
-    audio_remote = lines[1] if len(lines) > 1 else ""
 
-    # If board has audio, download it
-    if audio_remote:
-        remote_path = audio_remote
-        local_path = os.path.join(local_dir, "board_" + str(reminder_id) + os.path.splitext(remote_path)[1])
-        ok = _sftp_get(remote_path, local_path)
-        if ok and os.path.exists(local_path):
-            from player import player
-            player.play(local_path, False)
-            return {"success": True, "message": "Playing from board: " + os.path.basename(local_path)}
+    if not content_to_play:
+        raise HTTPException(404, detail="Reminder not found on board")
 
-    # Play through board TTS only
-    if not content:
-        raise HTTPException(404, detail="No content to play")
+    # Use board doubao TTS via SSH
     try:
-        _board_speak(content)
-        return {"success": True, "message": "Board TTS: " + content[:30]}
-    except Exception as e_play:
-        raise HTTPException(500, detail="Board TTS failed: " + str(e_play))
+        _board_speak(content_to_play)
+        return {"success": True, "message": "Board TTS: " + content_to_play[:30]}
+    except Exception as _be:
+        print(f"[Play] Board TTS error: {_be}")
+        return {"success": False, "message": "Board not reachable: " + content_to_play[:20]}
 
-@router.post("/{reminder_id}/generate-tts")
 async def generate_board_tts(reminder_id: int):
     """Generate TTS audio locally for a board reminder."""
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); conn.close()"
@@ -592,4 +560,5 @@ async def generate_board_tts(reminder_id: int):
         return {"success": True, "message": "Board TTS sent", "content": content}
     except Exception as e_tts:
         raise HTTPException(500, detail="Board TTS failed: " + str(e_tts))
+
 
