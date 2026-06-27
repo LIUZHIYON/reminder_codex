@@ -1,22 +1,18 @@
-﻿import asyncio
+import asyncio
 import os, json
 import threading
 import paramiko
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
 router = APIRouter(prefix="/api/board-reminders", tags=["board-reminders"])
-
-BOARD_HOST = "192.168.1.11"
+BOARD_HOST = "192.168.1.191"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
 BOARD_BASE_DIR = "/home/cat/reminder_system"
 BOARD_DB_PATH = BOARD_BASE_DIR + "/data/reminders.db"
 BOARD_AUDIO_DIR = BOARD_BASE_DIR + "/audio/"
-
 CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "board_reminders.json")
-
 def _load_cache():
     if os.path.exists(CACHE_FILE):
         try:
@@ -25,12 +21,10 @@ def _load_cache():
         except:
             pass
     return []
-
 def _save_cache(data):
     os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
     with open(CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
 def _ssh_exec(cmd):
     try:
         client = paramiko.SSHClient()
@@ -43,7 +37,6 @@ def _ssh_exec(cmd):
         return out, err
     except Exception as e:
         return None, str(e)
-
 def _ssh_exec_py(py_code):
     try:
         client = paramiko.SSHClient()
@@ -62,11 +55,9 @@ def _ssh_exec_py(py_code):
         return out, err
     except Exception as e:
         return None, str(e)
-
 def _check_online():
     out, err = _ssh_exec("echo online_ok")
     return bool(out and "online_ok" in out)
-
 def _sftp_get(remote_path, local_path):
     try:
         client = paramiko.SSHClient()
@@ -79,7 +70,6 @@ def _sftp_get(remote_path, local_path):
         return True
     except Exception as e:
         return False
-
 def _ssh_update_reminder(command_id, new_status, content="", reminder_time=""):
     """Update board SQLite reminder status via SSH using SFTP temp script.
     Tries command_id first, then falls back to content+reminder_time matching.
@@ -108,7 +98,6 @@ def _ssh_update_reminder(command_id, new_status, content="", reminder_time=""):
         "print('ok')",
     ]
     py_code = "\n".join(lines)
-
     try:
         from services.tts import generate_audio_sync
         client = paramiko.SSHClient()
@@ -166,171 +155,39 @@ def _ssh_delete_reminder(content, reminder_time):
     except Exception as e:
         print("SSH delete failed:", e)
         return "0"
-
 _board_speak_lock = threading.Lock()
-
-
 def _board_speak(text):
-    """Blocking: speak on board via ROS2 /tts/text topic + aplay.
-    
-    Flow: SSH 鈫?upload script 鈫?run script (blocking):
-      1. rclpy.init, subscribe /tts/audio
-      2. Publish text to /tts/text
-      3. Collect audio chunks 鈫?save WAV
-      4. amixer unmute 鈫?aplay (blocking) 鈫?cleanup
-    
-    Returns True on success, False on failure.
-    Computer-side lock serializes calls; SSH blocks until playback finishes.
-    No lock files, no nohup, no action client.
+    """Speak on board via voice_bridge /voice/speak Action (bypasses tts_node).
+    SSH -> ros2 action send_goal /voice/speak -> voice_bridge handles TTS + playback.
     """
     text = text.strip()
     if not text:
         return False
     with _board_speak_lock:
         try:
-            import uuid, time
-            uid = uuid.uuid4().hex[:8]
-            script_path = f"/tmp/_speak_{uid}.py"
-            wav_path = f"/tmp/_speak_{uid}.wav"
-            log_path = f"/tmp/_speak_{uid}.log"
-
             cli = paramiko.SSHClient()
             cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
-            sftp = cli.open_sftp()
-
-            # Build Python script for the board
-            safe = repr(text)
-            py_code = (
-                "#!/usr/bin/env python3\n"
-                "# -*- coding: utf-8 -*-\n"
-                "import rclpy, sys, time, struct, wave, subprocess, json\n"
-                "from rclpy.node import Node\n"
-                "from std_msgs.msg import String\n"
-                "from robot_interface.msg import AudioData\n"
-                "\n"
-                "TEXT = " + safe + "\n"
-                "WAV_PATH = " + repr(wav_path) + "\n"
-                "LOG_PATH = " + repr(log_path) + "\n"
-                "\n"
-                "def log(msg):\n"
-                "    with open(LOG_PATH, 'a') as f:\n"
-                "        f.write(msg + '\\n')\n"
-                "\n"
-                "try:\n"
-                "    rclpy.init()\n"
-                "    node = Node('speak_" + uid + "')\n"
-                "    chunks = []\n"
-                "    last_audio = [time.time()]\n"
-                "    channels = [1]\n"
-                "    rate = [24000]\n"
-                "\n"
-                "    def on_audio(msg):\n"
-                "        last_audio[0] = time.time()\n"
-                "        channels[0] = msg.channels\n"
-                "        rate[0] = msg.rate\n"
-                "        for s in msg.data:\n"
-                "            chunks.append(struct.pack('<H', s))\n"
-                "\n"
-                "    sub = node.create_subscription(AudioData, '/tts/audio', on_audio, 10)\n"
-                "    pub = node.create_publisher(String, '/tts/text', 10)\n"
-                "\n"
-                "    # Publish text\n"
-                "    time.sleep(0.3)\n"
-                "    msg = String()\n"
-                "    msg.data = TEXT\n"
-                "    pub.publish(msg)\n"
-                "    log('PUB: ' + TEXT[:50])\n"
-                "\n"
-                "    # Spin and collect audio (max 20s, 3s silence = done)\n"
-                "    from rclpy.executors import SingleThreadedExecutor\n"
-                "    executor = SingleThreadedExecutor()\n"
-                "    executor.add_node(node)\n"
-                "    deadline = time.time() + 25\n"
-                "    while time.time() < deadline:\n"
-                "        executor.spin_once(timeout_sec=0.1)\n"
-                "        if len(chunks) > 0 and time.time() - last_audio[0] > 3.0:\n"
-                "            break\n"
-                "    executor.shutdown()\n"
-                "    node.destroy_node()\n"
-                "    rclpy.shutdown()\n"
-                "\n"
-                "    if not chunks:\n"
-                "        log('NO_AUDIO')\n"
-                "        print('NO_AUDIO', flush=True)\n"
-                "        sys.exit(1)\n"
-                "\n"
-                "    # Save WAV\n"
-                "    raw = b''.join(chunks)\n"
-                "    with wave.open(WAV_PATH, 'wb') as wf:\n"
-                "        wf.setnchannels(channels[0])\n"
-                "        wf.setsampwidth(2)\n"
-                "        wf.setframerate(rate[0])\n"
-                "        wf.writeframes(raw)\n"
-                "    log(f'WAV: {len(raw)} bytes')\n"
-                "\n"
-                "    # Play audio (blocking)\n"
-                "    # Try aplay first, fallback to paplay\n"
-                "    for player in ['aplay', 'paplay']:\n"
-                "        try:\n"
-                "            subprocess.run([player, WAV_PATH], timeout=60, check=True,\n"
-                "                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
-                "            log(f'PLAYED via {player}')\n"
-                "            break\n"
-                "        except FileNotFoundError:\n"
-                "            continue\n"
-                "        except subprocess.TimeoutExpired:\n"
-                "            log(f'TIMEOUT: {player}')\n"
-                "    else:\n"
-                "        log('NO_PLAYER')\n"
-                "        print('NO_PLAYER', flush=True)\n"
-                "        sys.exit(1)\n"
-                "\n"
-                "    # Cleanup\n"
-                "    try:\n"
-                "        import os as _os\n"
-                "        _os.remove(WAV_PATH)\n"
-                "    except:\n"
-                "        pass\n"
-                "    log('OK')\n"
-                "    print('OK', flush=True)\n"
-                "except Exception as e:\n"
-                "    with open(LOG_PATH, 'a') as f:\n"
-                "        f.write('ERR: ' + str(e) + '\\n')\n"
-                "    print('ERR: ' + str(e), flush=True)\n"
-                "    sys.exit(1)\n"
-            )
-
-            with sftp.open(script_path, "wb") as f:
-                f.write(py_code.encode("utf-8"))
-            sftp.close()
-
-            # Run script on board: source ROS2, unmute, run script
+            
+            safe = text.replace('"', '\\"')
             cmd = (
-                "amixer set Speaker 90% unmute 2>/dev/null; "
-                "amixer set Headphone 90% unmute 2>/dev/null; "
-                "source /opt/ros/humble/setup.bash && "
-                "source /home/cat/ros2_ws/install/setup.bash && "
-                "python3 -u " + script_path + " 2>&1; "
-                "rm -f " + script_path + " " + log_path
+                
+                "source /opt/ros/humble/setup.bash; "
+                "source /home/cat/ros2_ws/install/setup.bash; "
+                "bash /home/cat/setup_audio.sh 2>/dev/null; "
+                'ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak "{text: \\"' + safe + '\\", audio_path: \\"\\"}" -t 60 2>&1'
             )
             transport = cli.get_transport()
             if transport:
                 transport.set_keepalive(30)
-            _, stdout, stderr = cli.exec_command(cmd, timeout=90)
+            _, stdout, stderr = cli.exec_command(cmd, timeout=60)
             out = stdout.read().decode("utf-8", errors="replace").strip()
             err = stderr.read().decode("utf-8", errors="replace").strip()[:200]
             cli.close()
-
-            if "OK" in out:
+            
+            if "SUCCEEDED" in out and "success: true" in out:
                 print("[BoardSpeak] OK: " + text[:30] + "...")
                 return True
-            elif "NO_AUDIO" in out:
-                print("[BoardSpeak] No audio from TTS: " + text[:30] + "...")
-                return False
-            elif "NO_PLAYER" in out:
-                print("[BoardSpeak] No audio player on board: " + text[:30] + "...")
-                return False
             else:
                 print("[BoardSpeak] Failed: " + text[:30] + "...")
                 if err:
@@ -339,8 +196,6 @@ def _board_speak(text):
         except Exception as e:
             print("[BoardSpeak] Error: " + str(e))
             return False
-
-
 class BoardReminderSync(BaseModel):
     command_id: str = ""
     title: str
@@ -350,7 +205,6 @@ class BoardReminderSync(BaseModel):
     received_at: str = ""
     status: str = "received"
     repeat_type: str = ""
-
 @router.post("/sync")
 async def sync_board_reminder(data: BoardReminderSync):
     records = _load_cache()
@@ -384,7 +238,6 @@ async def sync_board_reminder(data: BoardReminderSync):
         except Exception as _e:
             print("Sync TTS error: " + str(_e))
     return {"success": True, "count": len(records)}
-
 @router.post("/status-update")
 async def status_update(data: dict):
     """Update a board reminder status and sync to board SQLite via SSH."""
@@ -413,7 +266,6 @@ async def status_update(data: dict):
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _ssh_update_reminder, command_id, new_status, content, reminder_time)
     return {"success": True}
-
 @router.post("/delete-record")
 async def delete_board_record(data: dict):
     """Delete a reminder from board SQLite by content+reminder_time."""
@@ -435,7 +287,6 @@ async def delete_board_record(data: dict):
         pass
     deleted = _ssh_delete_reminder(content_text, reminder_time)
     return {"success": True, "deleted": deleted}
-
 @router.post("/stop")
 async def stop_board_playback():
     """Stop all audio playback on the board."""
@@ -449,7 +300,6 @@ async def stop_board_playback():
         return {"success": True}
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
-
 @router.get("/presence")
 async def get_presence():
     pf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "board_presence.json")
@@ -459,7 +309,6 @@ async def get_presence():
         except:
             pass
     return {"present": True, "updated_at": ""}
-
 @router.post("/presence")
 async def set_presence(data: dict):
     present = data.get("present", True)
@@ -468,7 +317,6 @@ async def set_presence(data: dict):
     with open(pf, "w", encoding="utf-8") as f:
         json.dump({"present": present, "updated_at": datetime.now().isoformat()}, f)
     return {"success": True, "present": present}
-
 @router.get("/status")
 async def board_status():
     online = _check_online()
@@ -482,7 +330,6 @@ async def board_status():
             except:
                 pass
     return info
-
 @router.get("")
 async def list_board_reminders():
     """List board reminders from local cache."""
@@ -496,7 +343,6 @@ async def list_board_reminders():
     except:
         pass
     return []
-
 @router.delete("/{reminder_id}")
 async def delete_board_reminder(reminder_id: int):
     # Also mark as cancelled in cache
@@ -511,7 +357,6 @@ async def delete_board_reminder(reminder_id: int):
     if not out or "OK" not in out:
         raise HTTPException(500, detail="Board deletion failed")
     return {"success": True}
-
 @router.post("/{reminder_id}/play")
 async def play_board_reminder(reminder_id: int):
     """Play board reminder via SSH doubao TTS on the board."""
@@ -519,7 +364,6 @@ async def play_board_reminder(reminder_id: int):
     project_dir = os.path.join(base_dir, "..")
     local_dir = os.path.join(project_dir, "audio")
     os.makedirs(local_dir, exist_ok=True)
-
     content_to_play = ""
     try:
         _cf = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "board_reminders.json")
@@ -532,10 +376,8 @@ async def play_board_reminder(reminder_id: int):
                     break
     except Exception as _ce:
         print(f"[Play] Cache lookup error: {_ce}")
-
     if not content_to_play:
         raise HTTPException(404, detail="Reminder not found on board")
-
     # Use board doubao TTS via SSH
     try:
         _board_speak(content_to_play)
@@ -543,7 +385,6 @@ async def play_board_reminder(reminder_id: int):
     except Exception as _be:
         print(f"[Play] Board TTS error: {_be}")
         return {"success": False, "message": "Board not reachable: " + content_to_play[:20]}
-
 async def generate_board_tts(reminder_id: int):
     """Generate TTS audio locally for a board reminder."""
     q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); conn.close()"
@@ -560,5 +401,3 @@ async def generate_board_tts(reminder_id: int):
         return {"success": True, "message": "Board TTS sent", "content": content}
     except Exception as e_tts:
         raise HTTPException(500, detail="Board TTS failed: " + str(e_tts))
-
-

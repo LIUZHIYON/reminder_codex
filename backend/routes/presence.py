@@ -7,7 +7,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PRESENCE_FILE = os.path.join(BASE, "board_presence.json")
 CACHE_FILE = os.path.join(BASE, "board_reminders.json")
 
-BOARD_HOST = "192.168.1.70"
+BOARD_HOST = "192.168.1.191"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
 BOARD_DB_PATH = "/home/cat/reminder_system/data/reminders.db"
@@ -208,5 +208,7 @@ def process_reminders():
                     _update_remote_status(cid, new_st)
                 except Exception as e:
                     log.warning(f"Status sync error for {cid}: {e}")
+
+
 
 
