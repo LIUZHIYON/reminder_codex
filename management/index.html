@@ -29,6 +29,29 @@ button:disabled{background:#b2bec3}
 </head>
 <body>
 <h1>🔔 设备管理</h1>
+
+<!-- Login/Bind Card -->
+<div class="card" id="loginCard">
+  <h3>🔐 绑定宠物账号</h3>
+  <input type="text" id="loginPhone" placeholder="手机号" value="13900139000">
+  <input type="password" id="loginPwd" placeholder="密码" value="888888">
+  <div style="display:flex;gap:8px">
+    <button id="loginBtn" onclick="doLogin()">🔐 登录绑定</button>
+    <span id="loginStatus" style="font-size:13px;line-height:34px;color:#00b894"></span>
+  </div>
+    <div style="margin-top:8px;display:flex;gap:8px">
+    <input type="text" id="bindSerial" placeholder="设备序列号" style="flex:1;margin:0" value="6976f96f-bc80-56e3-9b27-13d12cdde9d3">
+    <button onclick="doBind()" style="white-space:nowrap">🔗 绑定</button>
+    <button onclick="doUnbind()" style="white-space:nowrap;background:#d63031">🔓 解绑</button>
+  </div>
+  <div style="margin-top:8px;font-size:12px;color:#888">
+    <span>绑定状态: </span><span id="bindStatus" style="font-weight:600">未绑定</span>
+  </div>
+  <div style="margin-top:8px;font-size:12px;color:#888">
+    <span>当前绑定: </span><span id="boundPhone" style="font-weight:600">未登录</span>
+    <span id="boundPet" style="margin-left:10px"></span>
+  </div>
+</div>
 <div class="card">
 <h3>📋 设备信息</h3>
 <div class="info">序列号: <span class="code" id="serialDisplay"></span></div>
@@ -184,6 +207,58 @@ async function doSend(){
   }catch(e){res.innerHTML='<span class="err">❌ 请求失败</span>';}
   btn.disabled=false;btn.textContent="发送提醒";
 }
+async function doLogin(){
+  var btn=document.getElementById("loginBtn");btn.disabled=true;btn.textContent="登录中...";
+  var phone=document.getElementById("loginPhone").value.trim();
+  var pwd=document.getElementById("loginPwd").value.trim();
+  if(!phone||!pwd){document.getElementById("loginStatus").textContent="请输入手机号和密码";btn.disabled=false;btn.textContent="🔐 登录绑定";return;}
+  try{
+    var r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:phone,password:pwd})});
+    var d=await r.json();
+    if(d.success){
+      document.getElementById("loginStatus").textContent="✅ 登录成功";
+      document.getElementById("boundPhone").textContent=phone;
+      document.getElementById("boundPet").textContent="宠物ID: "+d.pet_id;
+      document.getElementById("loginPhone").value=phone;
+      refresh();loadRemoteReminders();
+    }else{
+      document.getElementById("loginStatus").textContent="❌ "+d.msg;
+    }
+  }catch(e){document.getElementById("loginStatus").textContent="❌ 请求失败";}
+  btn.disabled=false;btn.textContent="🔐 登录绑定";
+}
+
+// Check login status on load
+async function doBind(){
+  var serial=document.getElementById("bindSerial").value.trim();
+  if(!serial){document.getElementById("bindStatus").textContent="请输入序列号";return;}
+  try{
+    var r=await fetch("/api/bind",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({serial:serial})});
+    var d=await r.json();
+    document.getElementById("bindStatus").textContent=d.success?"✅ 绑定成功":"❌ "+d.msg;
+  }catch(e){document.getElementById("bindStatus").textContent="❌ 请求失败";}
+}
+async function doUnbind(){
+  var serial=document.getElementById("bindSerial").value.trim();
+  if(!serial){document.getElementById("bindStatus").textContent="请输入序列号";return;}
+  if(!confirm("确定要解绑该设备吗？")) return;
+  try{
+    var r=await fetch("/api/unbind",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({serial:serial})});
+    var d=await r.json();
+    document.getElementById("bindStatus").textContent=d.success?"✅ 解绑成功":"❌ "+d.msg;
+  }catch(e){document.getElementById("bindStatus").textContent="❌ 请求失败";}
+}
+async function checkLogin(){
+  try{
+    var r=await fetch("/api/login-status");
+    var d=await r.json();
+    if(d.online&&d.phone){
+      document.getElementById("boundPhone").textContent=d.phone;
+      if(d.pet_id) document.getElementById("boundPet").textContent="宠物ID: "+d.pet_id;
+    }
+  }catch(e){}
+}
+checkLogin();
 refresh();setInterval(refresh,3000);
 // Event delegation for remote reminders buttons
 document.addEventListener("click", function(e) {

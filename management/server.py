@@ -17,7 +17,7 @@ API = "http://47.118.26.156:8000/api/v1"
 SERIAL = "6976f96f-bc80-56e3-9b27-13d12cdde9d3"
 PORT = 8001
 
-_utoken = [""]; _last_refresh = [0]; _reminders = []
+_utoken = [""]; _last_refresh = [0]; _reminders = []; _phone = ["13900139000"]; _pwd = ["888888"]
 
 def log(m): print(f"[{time.strftime('%H:%M:%S')}] {m}")
 
@@ -28,7 +28,7 @@ def refresh(force=False):
     if force or now - _last_refresh[0] > 30:
         for attempt in range(2):
             try:
-                r = rq.get(f"{API}/aipet/app/auth/13900139000/888888", timeout=10)
+                r = rq.get(f"{API}/aipet/app/auth/{_phone[0]}/{_pwd[0]}", timeout=10)
                 d = r.json()
                 token = d.get("data","")
                 if d.get("success") and token:
@@ -152,6 +152,76 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.on_event("startup")
 async def startup():
     refresh()
+
+@app.post("/api/login")
+def login(data: dict):
+    """Login with phone + password, returns pets list."""
+    phone = data.get("phone", "").strip()
+    pwd = data.get("password", "").strip()
+    if not phone or not pwd:
+        raise HTTPException(400, "phone and password required")
+    try:
+        r = rq.get(f"{API}/aipet/app/auth/{phone}/{pwd}", timeout=10)
+        d = r.json()
+        if d.get("success") and d.get("data"):
+            _utoken[0] = d["data"]
+            _phone[0] = phone
+            _pwd[0] = pwd
+            _last_refresh[0] = time.time()
+            # Get pets
+            r2 = rq.get(f"{API}/aipet/app/myaipets", headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
+            pets = r2.json().get("data", [])
+            _cached_pid[0] = pets[0].get("id") if pets else None
+            return {"success": True, "phone": phone, "pet_id": _cached_pid[0], "pets": pets}
+        else:
+            return {"success": False, "msg": d.get("msg", "Login failed")}
+    except Exception as e:
+        return {"success": False, "msg": str(e)}
+
+@app.post("/api/bind")
+def bind_pet(data: dict):
+    """Bind a pet by serial number."""
+    serial = data.get("serial", "").strip()
+    if not serial:
+        raise HTTPException(400, "serial number required")
+    if not _utoken[0]:
+        return {"success": False, "msg": "Not logged in"}
+    try:
+        r = rq.get(f"{API}/aipet/app/bind/{serial}",
+                   headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
+        d = r.json()
+        if d.get("success"):
+            _cached_pid[0] = None  # Reset cached pid so it re-fetches
+            return {"success": True, "msg": d.get("msg", "Bind successful"), "data": d.get("data")}
+        else:
+            return {"success": False, "msg": d.get("msg", "Bind failed")}
+    except Exception as e:
+        return {"success": False, "msg": str(e)}
+
+@app.post("/api/unbind")
+def unbind_pet(data: dict):
+    """Unbind a pet by serial number."""
+    serial = data.get("serial", "").strip()
+    if not serial:
+        raise HTTPException(400, "serial number required")
+    if not _utoken[0]:
+        return {"success": False, "msg": "Not logged in"}
+    try:
+        r = rq.get(f"{API}/aipet/app/unbind/{serial}",
+                   headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
+        d = r.json()
+        if d.get("success"):
+            _cached_pid[0] = None
+            return {"success": True, "msg": d.get("msg", "Unbind successful")}
+        else:
+            return {"success": False, "msg": d.get("msg", "Unbind failed")}
+    except Exception as e:
+        return {"success": False, "msg": str(e)}
+
+@app.get("/api/login-status")
+def login_status():
+    """Check current login status."""
+    return {"online": bool(_utoken[0]), "phone": _phone[0] if _utoken[0] else "", "pet_id": _cached_pid[0]}
 
 @app.get("/api/status")
 def st():
