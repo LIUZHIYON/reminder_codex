@@ -184,14 +184,15 @@ def bind_pet(data: dict):
     serial = data.get("serial", "").strip()
     if not serial:
         raise HTTPException(400, "serial number required")
-    if not _utoken[0]:
-        return {"success": False, "msg": "Not logged in"}
+    # Refresh token first
+    if not refresh(force=True):
+        return {"success": False, "msg": "用户token已失效，请重新登录"}
     try:
         r = rq.get(f"{API}/aipet/app/bind/{serial}",
                    headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
         d = r.json()
         if d.get("success"):
-            _cached_pid[0] = None  # Reset cached pid so it re-fetches
+            _cached_pid[0] = None
             return {"success": True, "msg": d.get("msg", "Bind successful"), "data": d.get("data")}
         else:
             return {"success": False, "msg": d.get("msg", "Bind failed")}
@@ -204,8 +205,8 @@ def unbind_pet(data: dict):
     serial = data.get("serial", "").strip()
     if not serial:
         raise HTTPException(400, "serial number required")
-    if not _utoken[0]:
-        return {"success": False, "msg": "Not logged in"}
+    if not refresh(force=True):
+        return {"success": False, "msg": "用户token已失效，请重新登录"}
     try:
         r = rq.get(f"{API}/aipet/app/unbind/{serial}",
                    headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
@@ -217,6 +218,17 @@ def unbind_pet(data: dict):
             return {"success": False, "msg": d.get("msg", "Unbind failed")}
     except Exception as e:
         return {"success": False, "msg": str(e)}
+
+@app.post("/api/logout")
+def logout():
+    """Clear auth token and cached data."""
+    _utoken[0] = ""
+    _phone[0] = ""
+    _pwd[0] = ""
+    _cached_pid[0] = None
+    _last_refresh[0] = 0
+    _reminders.clear()
+    return {"success": True, "msg": "已退出登录"}
 
 @app.get("/api/login-status")
 def login_status():

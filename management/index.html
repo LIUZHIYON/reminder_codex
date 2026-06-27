@@ -49,6 +49,7 @@ button:disabled{background:#b2bec3}
   </div>
   <div style="margin-top:8px;font-size:12px;color:#888">
     <span>当前绑定: </span><span id="boundPhone" style="font-weight:600">未登录</span>
+    <button onclick="doLogout()" style="margin-left:8px;padding:2px 8px;font-size:11px;background:#d63031;color:white;border:none;border-radius:3px;cursor:pointer">🚪 退出登录</button>
     <span id="boundPet" style="margin-left:10px"></span>
   </div>
 </div>
@@ -229,6 +230,20 @@ async function doLogin(){
 }
 
 // Check login status on load
+async function doLogout(){
+  if(!confirm("确定要退出登录吗？")) return;
+  try{
+    var r=await fetch("/api/logout",{method:"POST"});
+    var d=await r.json();
+    if(d.success){
+      document.getElementById("boundPhone").textContent="未登录";
+      document.getElementById("boundPet").textContent="";
+      document.getElementById("loginStatus").textContent="已退出";
+      document.getElementById("statusText").textContent="离线";
+      document.getElementById("statusText").className="off";
+    }
+  }catch(e){}
+}
 async function doBind(){
   var serial=document.getElementById("bindSerial").value.trim();
   if(!serial){document.getElementById("bindStatus").textContent="请输入序列号";return;}
