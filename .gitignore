@@ -1,0 +1,38 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Database
+*.db
+
+# Audio (generated at runtime)
+audio/*.wav
+audio/*.mp3
+!audio/.gitkeep
+
+# Logs
+*.log
+svr*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+venv/
+.venv/
+
+_fix_*.py
+board_reminders.json
+# Temp files
+_tmp*
+board_presence.json
