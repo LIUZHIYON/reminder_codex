@@ -765,37 +765,26 @@ async def play_board_reminder(reminder_id: int):
                 if str(_cr.get("command_id","") or "") == _sid or str(_cr.get("id","") or "") == _sid:
                     _ct = _cr.get("content","") or _cr.get("title","")
                     if _ct:
-                        _board_speak(_ct)
-                        return {"success": True, "message": "Board TTS: " + _ct[:30]}
+                        # Try local PC TTS first (faster), then board
+                        try:
+                            from services.tts import generate_audio_sync as _gen
+                            from player import player as _pl
+                            aid = abs(hash(_ct)) % 100000
+                            ap = _gen(aid, _ct, "")
+                            if ap:
+                                _pl.play(ap, False)
+                                return {"success": True, "message": "Local PC TTS: " + _ct[:30]}
+                        except Exception as _le:
+                            print(f"[Play] Local TTS error: {_le}")
+                        # Fallback to board TTS
+                        try:
+                            _board_speak(_ct)
+                            return {"success": True, "message": "Board TTS: " + _ct[:30]}
+                        except:
+                            raise HTTPException(500, detail="All TTS failed: " + _ct[:20])
     except Exception as _ce:
         print(f"[Play] Cache lookup error: {_ce}")
-    # SSH fallback: try to get content from board (search by id or command_id)
-    q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content, audio_file FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); print(row[1] if row and row[1] else ''); conn.close()"
-    out, err = _ssh_exec_py(q)
-    if not out or not out.strip():
-        # Try by command_id (string) instead
-        q2 = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content, audio_file FROM reminders WHERE command_id = ?',('" + str(reminder_id) + "',)); row=c.fetchone(); print(row[0] if row else ''); print(row[1] if row and row[1] else ''); conn.close()"
-        out, err = _ssh_exec_py(q2)
-    if not out or not out.strip():
-        # Try from cache (board_reminders.json)
-        try:
-            _cf = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "board_reminders.json")
-            if os.path.exists(_cf):
-                _cache = json.load(open(_cf, "r", encoding="utf-8"))
-                _sid = str(reminder_id)
-                for _cr in _cache:
-                    if str(_cr.get("command_id","")) == _sid or str(_cr.get("id","")) == _sid:
-                        _ct = _cr.get("content","") or _cr.get("title","")
-                        if _ct:
-                            try:
-                                _board_speak(_ct)
-                                return {"success": True, "message": "Board TTS: " + _ct[:30]}
-                            except:
-                                pass
-            # raise removed - falls through to except
-        except Exception as _cache_e:
-            print(f"[CacheFallback] Error: {_cache_e}")
-        raise HTTPException(404, detail="Reminder not found on board")
+    raise HTTPException(404, detail="Reminder not found on board")
     lines = out.strip().split("\n")
     content = lines[0] if lines else ""
     audio_remote = lines[1] if len(lines) > 1 else ""
