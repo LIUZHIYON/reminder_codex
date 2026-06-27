@@ -85,3 +85,4 @@ echo ""
 echo "To test simulation locally:"
 echo "  cd simulation"
 echo "  python device_simulator.py --serial AIPET-${BOARD_IP##*.}"
+

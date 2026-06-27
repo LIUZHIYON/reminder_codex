@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/board-reminders", tags=["board-reminders"])
 
-BOARD_HOST = "192.168.1.107"
+BOARD_HOST = "192.168.1.11"
 BOARD_USER = "cat"
 BOARD_PASS = "temppwd"
 BOARD_BASE_DIR = "/home/cat/reminder_system"
@@ -592,3 +592,4 @@ async def generate_board_tts(reminder_id: int):
         return {"success": True, "message": "Board TTS sent", "content": content}
     except Exception as e_tts:
         raise HTTPException(500, detail="Board TTS failed: " + str(e_tts))
+

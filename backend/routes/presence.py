@@ -1,4 +1,4 @@
-import os, json, logging
+﻿import os, json, logging
 from datetime import datetime, timedelta
 
 log = logging.getLogger(__name__)
@@ -208,3 +208,4 @@ def process_reminders():
                     _update_remote_status(cid, new_st)
                 except Exception as e:
                     log.warning(f"Status sync error for {cid}: {e}")
+

@@ -1,4 +1,4 @@
-import time
+﻿import time
 import json, time, threading, os, sys
 import requests as _rq
 _rq_orig_get = _rq.get; _rq_orig_post = _rq.post
@@ -186,7 +186,7 @@ def bind_pet(data: dict):
         raise HTTPException(400, "serial number required")
     # Refresh token first
     if not refresh(force=True):
-        return {"success": False, "msg": "用户token已失效，请重新登录"}
+        return {"success": False, "msg": "Token expired, please re-login"}
     try:
         r = rq.get(f"{API}/aipet/app/bind/{serial}",
                    headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
@@ -206,7 +206,7 @@ def unbind_pet(data: dict):
     if not serial:
         raise HTTPException(400, "serial number required")
     if not refresh(force=True):
-        return {"success": False, "msg": "用户token已失效，请重新登录"}
+        return {"success": False, "msg": "Token expired"}
     try:
         r = rq.get(f"{API}/aipet/app/unbind/{serial}",
                    headers={"Authorization": f"Bearer {_utoken[0]}"}, timeout=10)
@@ -228,7 +228,7 @@ def logout():
     _cached_pid[0] = None
     _last_refresh[0] = 0
     _reminders.clear()
-    return {"success": True, "msg": "已退出登录"}
+    return {"success": True, "msg": "OK"}
 
 @app.get("/api/login-status")
 def login_status():
@@ -584,3 +584,7 @@ def index():
 if __name__ == "__main__":
     log(f"http://127.0.0.1:{PORT}")
     uvicorn.run(app, host="127.0.0.1", port=PORT)
+
+
+
+

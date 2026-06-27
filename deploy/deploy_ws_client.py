@@ -1,4 +1,4 @@
-import paramiko, os, time
+﻿import paramiko, os, time
 
 host = "192.168.1.64"
 client = paramiko.SSHClient()
@@ -52,3 +52,4 @@ print(f"Running processes:\\n{stdout.read().decode()[:500]}")
 
 client.close()
 print("Done")
+
