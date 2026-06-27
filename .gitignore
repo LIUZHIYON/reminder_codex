@@ -36,3 +36,8 @@ board_reminders.json
 # Temp files
 _tmp*
 board_presence.json
+
+# Log files
+backend/server.err
+backend/server.log
+backend/server_err.log
