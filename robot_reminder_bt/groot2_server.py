@@ -125,8 +125,9 @@ class Groot2Server(Node):
                 if req_type == 'T':  # FULLTREE 请求
                     xml = self._build_tree_xml().encode('utf-8')
                     header = struct.pack('<BBL', 2, ord('T'), req_uid)
-                    reply = header + tree_uuid + struct.pack('<I', len(xml)) + xml
-                    sock.send(reply)
+                    # Send multipart: [header+uuid, xml] for Groot2 compatibility
+                    reply_header = header + tree_uuid + struct.pack('<I', len(xml))
+                    sock.send_multipart([reply_header, xml])
 
                 elif req_type == 'S':  # STATUS 请求
                     ns = self._bt_status.get("node_statuses", {})
@@ -152,8 +153,8 @@ class Groot2Server(Node):
                 elif req_type == 'B':  # BLACKBOARD（全量转发）
                     bb_data = json.dumps(self._bt_status, ensure_ascii=False).encode('utf-8')
                     header = struct.pack('<BBL', 2, ord('B'), req_uid)
-                    reply = header + tree_uuid + struct.pack('<I', len(bb_data)) + bb_data
-                    sock.send(reply)
+                    reply_header = header + tree_uuid + struct.pack('<I', len(bb_data))
+                    sock.send_multipart([reply_header, bb_data])
 
                 else:
                     sock.send(b'')
