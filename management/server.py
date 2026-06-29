@@ -266,6 +266,25 @@ def send(data: dict):
     # Step 2 is removed: Section 22.6 is deprecated.
     # In new protocol, creation (Step 1) auto-sends to device.
     log(f"Created reminder #{reminder_id} (auto-send via new protocol)")
+    # SSH push to board topic -> BT driver
+    try:
+        import paramiko
+        _cli = paramiko.SSHClient()
+        _cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        _cli.connect("192.168.1.191", username="cat", password="temppwd", timeout=5)
+        _sftp = _cli.open_sftp()
+        _payload = json.dumps({"command":"reminder","command_id":str(reminder_id),
+            "params":{"reminder_data":{"title":title,"content":content,"reminder_time":rtime,"repeat_type":repeat_type}}})
+        with _sftp.open("/tmp/_rm.json", "w") as _f: _f.write(_payload)
+        _pub_code = "import sys,json,time\nsys.path.insert(0,'/home/cat/ros2_ws/src/robot_reminder_bt')\nimport rclpy\nfrom rclpy.node import Node\nfrom std_msgs.msg import String\nrclpy.init()\nn=Node('mgmt_pub')\npub=n.create_publisher(String,'/robot/command',10)\ntime.sleep(0.5)\nmsg=String()\nmsg.data=open('/tmp/_rm.json').read()\npub.publish(msg)\nn.destroy_node()\nrclpy.shutdown()"
+        with _sftp.open("/tmp/_pub.py", "w") as _f: _f.write(_pub_code)
+        _sftp.close()
+        _cli.exec_command("source /opt/ros/humble/setup.bash; source /home/cat/ros2_ws/install/setup.bash; python3 /tmp/_pub.py 2>&1", timeout=15)
+        _cli.close()
+        log(f"SSH pushed #{reminder_id} to /robot/command topic")
+    except Exception as e:
+        log(f"SSH push failed: {e}")
+
 
     
 
