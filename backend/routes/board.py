@@ -157,8 +157,17 @@ def _ssh_delete_reminder(content, reminder_time):
         return "0"
 _board_speak_lock = threading.Lock()
 def _board_speak(text):
-    """Speak on board via voice_bridge /voice/speak Action (bypasses tts_node).
-    SSH -> ros2 action send_goal /voice/speak -> voice_bridge handles TTS + playback.
+    """Blocking: speak on board via ROS2 /tts/text topic + aplay.
+    
+    Flow: SSH → upload script → run script (blocking):
+      1. rclpy.init, subscribe /tts/audio
+      2. Publish text to /tts/text
+      3. Collect audio chunks → save WAV
+      4. amixer unmute → aplay (blocking) → cleanup
+    
+    Returns True on success, False on failure.
+    Computer-side lock serializes calls; SSH blocks until playback finishes.
+    No lock files, no nohup, no action client.
     """
     text = text.strip()
     if not text:
@@ -359,11 +368,12 @@ async def delete_board_reminder(reminder_id: int):
     return {"success": True}
 @router.post("/{reminder_id}/play")
 async def play_board_reminder(reminder_id: int):
-    """Play board reminder via SSH doubao TTS on the board."""
+    """Play board reminder: try board TTS, fallback to local playback."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     project_dir = os.path.join(base_dir, "..")
     local_dir = os.path.join(project_dir, "audio")
     os.makedirs(local_dir, exist_ok=True)
+
     content_to_play = ""
     try:
         _cf = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "board_reminders.json")
@@ -378,26 +388,21 @@ async def play_board_reminder(reminder_id: int):
         print(f"[Play] Cache lookup error: {_ce}")
     if not content_to_play:
         raise HTTPException(404, detail="Reminder not found on board")
-    # Use board doubao TTS via SSH
-    try:
-        _board_speak(content_to_play)
+    # Try board TTS first
+    ok = _board_speak(content_to_play)
+    if ok:
         return {"success": True, "message": "Board TTS: " + content_to_play[:30]}
-    except Exception as _be:
-        print(f"[Play] Board TTS error: {_be}")
-        return {"success": False, "message": "Board not reachable: " + content_to_play[:20]}
-async def generate_board_tts(reminder_id: int):
-    """Generate TTS audio locally for a board reminder."""
-    q = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content FROM reminders WHERE id = ?',(" + str(reminder_id) + ",)); row=c.fetchone(); print(row[0] if row else ''); conn.close()"
-    out, err = _ssh_exec_py(q)
-    if not out or not out.strip():
-        # Try by command_id
-        q2 = "import sqlite3; conn=sqlite3.connect('" + BOARD_DB_PATH + "'); c=conn.cursor(); c.execute('SELECT content FROM reminders WHERE command_id = ?',('" + str(reminder_id) + "',)); row=c.fetchone(); print(row[0] if row else ''); conn.close()"
-        out, err = _ssh_exec_py(q2)
-    content = (out or "").strip()
-    if not content:
-        raise HTTPException(404, detail="Reminder not found on board")
+    # Fallback: generate TTS locally and play on PC
+    print(f"[Play] Board TTS failed, using local fallback for: {content_to_play[:30]}...")
     try:
-        _board_speak(content)
-        return {"success": True, "message": "Board TTS sent", "content": content}
-    except Exception as e_tts:
-        raise HTTPException(500, detail="Board TTS failed: " + str(e_tts))
+        from services.tts import generate_audio_sync
+        aid = abs(hash(content_to_play)) % 10000
+        audio_path = generate_audio_sync(aid, content_to_play, "")
+        if audio_path and os.path.exists(audio_path):
+            from player import player
+            player.play(audio_path, False)
+            return {"success": True, "message": "Local TTS: " + content_to_play[:30]}
+    except Exception as _fe:
+        print(f"[Play] Local fallback error: {_fe}")
+    return {"success": False, "message": "Playback failed: " + content_to_play[:20]}
+
