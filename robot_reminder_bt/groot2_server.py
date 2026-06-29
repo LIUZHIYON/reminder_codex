@@ -144,12 +144,12 @@ class Groot2Server(Node):
                 elif req_type == 'S':  # STATUS 请求
                     ns = self._bt_status.get("node_statuses", {})
                     status_data = b''
-                    uid_map = {
-                        "CheckNewReminder": 1, "CheckTime": 2,
-                        "MarkExecuting": 3, "BuildTtsText": 4,
-                        "GenerateTTS": 5, "RescheduleRepeating": 6,
-                        "PublishStatus": 7,
-                    }
+                    ns = self._bt_status.get("node_statuses", {})
+                    uid_map = {}
+                    for idx, cls_name in enumerate(ns.keys()):
+                        uid_map[cls_name] = idx + 1
+                    # Handle both old and new status formats
+                    status_values = {"SUCCESS": 2, "FAILURE": 3, "RUNNING": 1, "IDLE": 0, "SKIPPED": 4}
                     status_values = {"SUCCESS": 2, "FAILURE": 3, "RUNNING": 1,
                                      "IDLE": 0, "SKIPPED": 4}
                     for cls_name, uid in uid_map.items():
