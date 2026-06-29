@@ -41,3 +41,7 @@ board_presence.json
 backend/server.err
 backend/server.log
 backend/server_err.log
+
+# Temp investigation files
+_check_*
+_investigate_*
