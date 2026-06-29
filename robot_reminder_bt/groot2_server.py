@@ -156,8 +156,21 @@ class Groot2Server(Node):
                     reply_header = header + tree_uuid + struct.pack('<I', len(status_data))
                     sock.send_multipart([reply_header, status_data])
 
-                elif req_type == 'B':  # BLACKBOARD（全量转发）
-                    bb_data = json.dumps(self._bt_status, ensure_ascii=False).encode('utf-8')
+                elif req_type == 'B':  # BLACKBOARD - Groot2 format: {subtree: {key: {repr,type}}}
+                    raw_bb = self._bt_status
+                    formatted_bb = {}
+                    for k, v in raw_bb.items():
+                        if k == "node_statuses" or k == "tree_structure" or k == "current_reminder":
+                            continue
+                        if isinstance(v, bool): bb_type = "bool"; bb_repr = "true" if v else "false"
+                        elif isinstance(v, (int, float)): bb_type = "number"; bb_repr = str(v)
+                        elif isinstance(v, dict): bb_type = "object"; bb_repr = str(v)[:50]
+                        elif isinstance(v, list): bb_type = "array"; bb_repr = str(len(v)) + " items"
+                        elif v is None or v == "": bb_type = "string"; bb_repr = "(empty)"
+                        else: bb_type = "string"; bb_repr = str(v)[:80]
+                        formatted_bb[k] = {"repr": bb_repr, "type": bb_type}
+                    wrapper = {"ReminderBT": formatted_bb}
+                    bb_data = json.dumps(wrapper, ensure_ascii=False).encode('utf-8')
                     header = struct.pack('<BBL', 2, ord('B'), req_uid)
                     reply_header = header + tree_uuid + struct.pack('<I', len(bb_data))
                     sock.send_multipart([reply_header, bb_data])
