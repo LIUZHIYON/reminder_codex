@@ -117,10 +117,9 @@ async def ws_handler(request):
                             hdr = struct.pack("<BBL", 2, ord("B"), random.randint(0, 0xFFFFFFFF))
                             reply = bridge._send_zmq(hdr)
                             bb = {}
-                            if len(reply) >= 26:
-                                dlen = struct.unpack("<I", reply[22:26])[0]
-                                if dlen > 0:
-                                    bb = json.loads(reply[26:26+dlen])
+                            if reply and len(reply) >= 2 and len(reply[0]) >= 22:
+                                if len(reply) > 1 and reply[1]:
+                                    bb = json.loads(reply[1])
                             await ws.send_json({
                                 "type": "blackboard_data",
                                 "blackboard": bb
