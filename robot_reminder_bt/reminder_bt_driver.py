@@ -16,7 +16,16 @@ reminder_bt_driver — ROS2 BehaviorTree reminder driver (纯话题通信版)
   - 支持 Groot2 ZMQ 可视化
 """
 
-import rclpy, sys, os, json, time, threading
+import rclpy, sys, os, json, time, threading, struct
+
+try:
+    import zmq
+except ImportError:
+    zmq = None
+try:
+    import msgpack
+except ImportError:
+    msgpack = None
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import String
@@ -87,8 +96,14 @@ class ReminderBTDriver(Node):
 
         # BT status now published on every tick via _tick()
 
+        # === Embedded ZMQ server for Groot2 Monitor ===
+        self._zmq_port = 1667
+        self._zmq_running = True
+        self._zmq_thread = threading.Thread(target=self._zmq_loop, daemon=True)
+        self._zmq_thread.start()
+
         self.get_logger().info(
-            f"BT Driver ready (纯话题通信, tick={tick_ms}ms)")
+            f"BT Driver ready (纯话题通信, tick={tick_ms}ms, zmq={self._zmq_port})")
 
     # ────────── 命令接收 ──────────
 
@@ -253,6 +268,118 @@ class ReminderBTDriver(Node):
         root.add_child(check_new)
         root.add_child(main_seq)
         return root
+
+
+    # === ZMQ Groot2 Server (embedded) ===
+
+    def _zmq_loop(self):
+        if zmq is None:
+            return
+        ctx = zmq.Context()
+        sock = ctx.socket(zmq.REP)
+        sock.bind(f"tcp://0.0.0.0:{self._zmq_port}")
+        sock.setsockopt(zmq.LINGER, 0)
+        tree_uuid = os.urandom(16)
+
+        while self._zmq_running and rclpy.ok():
+            try:
+                msg = sock.recv_multipart(flags=zmq.NOBLOCK)
+            except zmq.ZMQError:
+                time.sleep(0.05)
+                continue
+            if not msg:
+                continue
+            req = msg[0]
+            if len(req) < 6:
+                continue
+            proto = req[0]
+            req_type = chr(req[1])
+            req_uid = struct.unpack("<I", req[2:6])[0]
+
+            try:
+                if req_type == "T":  # FULLTREE
+                    xml = self._zmq_build_xml().encode("utf-8")
+                    header = struct.pack("<BBL", 2, ord("T"), req_uid)
+                    reply_header = header + tree_uuid + struct.pack("<I", len(xml))
+                    sock.send_multipart([reply_header, xml])
+
+                elif req_type == "S":  # STATUS
+                    ns = self._collect_node_statuses()
+                    uid_map = {}
+                    for idx, cls_name in enumerate(ns.keys()):
+                        uid_map[cls_name] = idx + 1
+                    status_data = b""
+                    status_values = {"SUCCESS": 2, "FAILURE": 3, "RUNNING": 1, "IDLE": 0, "SKIPPED": 4}
+                    for cls_name, uid in uid_map.items():
+                        info = ns.get(cls_name, {})
+                        s = info.get("status", "IDLE")
+                        sv = status_values.get(s, 0)
+                        status_data += struct.pack("<HB", uid, sv)
+                    header = struct.pack("<BBL", 2, ord("S"), req_uid)
+                    reply_header = header + tree_uuid + struct.pack("<I", len(status_data))
+                    sock.send_multipart([reply_header, status_data or b""])
+
+                elif req_type == "B":  # BLACKBOARD
+                    bb = self.blackboard
+                    simple = {}
+                    for k, v in bb.items():
+                        if k in ("pending_reminders", "current_reminder"):
+                            continue
+                        if not isinstance(v, (str, int, float, bool, type(None))):
+                            continue
+                        simple[k] = v
+                    wrapper = {"ReminderBT": simple}
+                    if msgpack:
+                        bb_data = msgpack.dumps(wrapper)
+                    else:
+                        bb_data = json.dumps(wrapper, ensure_ascii=False).encode("utf-8")
+                    header = struct.pack("<BBL", 2, ord("B"), req_uid)
+                    reply_header = header + tree_uuid + struct.pack("<I", len(bb_data))
+                    sock.send_multipart([reply_header, bb_data])
+
+                else:
+                    sock.send(b"")
+            except Exception:
+                try:
+                    sock.send(b"")
+                except:
+                    pass
+
+        sock.close(linger=0)
+        ctx.term()
+
+    def _zmq_build_xml(self):
+        ts = self._collect_tree_structure()
+        lines = ['<?xml version="1.0"?>',
+                 '<root BTCPP_format="4">',
+                 '  <BehaviorTree ID="ReminderBT">']
+        self._uid_counter = 0
+        if ts:
+            self._zmq_xml_node(lines, ts, 2)
+        lines.append("  </BehaviorTree>")
+        lines.append("</root>")
+        return "\n".join(lines)
+
+    def _zmq_xml_node(self, lines, node, indent):
+        self._uid_counter += 1
+        uid = self._uid_counter
+        name = node.get("name", "node")
+        ntype = node.get("type", "Action")
+        status = "IDLE"
+        ns = self._collect_node_statuses()
+        cls_name = node.get("class", "")
+        if cls_name in ns:
+            status = ns[cls_name].get("status", "IDLE")
+        attrs = f'ID="{name}" name="{name}" _uid="{uid}" status="{status}"'
+        children = node.get("children", [])
+        pad = "  " * indent
+        if children:
+            lines.append(f"{pad}<{ntype} {attrs}>")
+            for child in children:
+                self._zmq_xml_node(lines, child, indent + 1)
+            lines.append(f"{pad}</{ntype}>")
+        else:
+            lines.append(f"{pad}<{ntype} {attrs}/>")
 
 
 def main(args=None):
