@@ -64,40 +64,46 @@ class Groot2Server(Node):
             pass
 
     def _build_tree_xml(self):
-        # Build Groot2 XML dynamically from node_statuses with _uid
+        # Build nested Groot2 XML from tree_structure (priority) or flat node_statuses
+        tree = self._bt_status.get("tree_structure", {})
         ns = self._bt_status.get("node_statuses", {})
-        nk = list(ns.keys())
         lines = ['<?xml version="1.0"?>',
                  '<root BTCPP_format="4">',
                  '  <BehaviorTree ID="ReminderBT">']
-        if nk:
-            uid_map = {name: i+1 for i, name in enumerate(nk)}
-            # Group into controls vs leafs
-            control_types = {"Sequence", "Fallback", "ReactiveSequence"}
-            controls = [k for k in nk if any(ct in k for ct in control_types)]
-            leafs = [k for k in nk if k not in controls]
-            root_name = controls[0] if controls else nk[0]
-            root_uid = uid_map[root_name]
-            root_info = ns.get(root_name, {})
-            root_attrs = f'name="{root_name}" _uid="{root_uid}"'
-            if root_info: root_attrs += f' status="{root_info.get("status", "IDLE")}"'
-            lines.append(f'    <ReactiveSequence ID="{root_name}" {root_attrs}>')
-            children = controls[1:] + leafs if controls else nk[1:]
-            for child in children:
-                cuid = uid_map[child]
-                cinfo = ns.get(child, {})
-                # Map class name to Groot2 type
-                if "Condition" in child: ctype = "Condition"
-                elif "Sequence" in child or "Fallback" in child or "Reactive" in child: ctype = "ReactiveSequence"
-                elif "Async" in child or "Generate" in child: ctype = "AsyncAction"
-                else: ctype = "Action"
-                cattrs = f'ID="{child}" name="{child}" _uid="{cuid}"'
-                if cinfo: cattrs += f' status="{cinfo.get("status", "IDLE")}"'
-                lines.append(f"      <{ctype} {cattrs}/>")
-            lines.append("    </ReactiveSequence>")
+        self._uid_counter = 0
+        if tree:
+            self._gen_xml_node(lines, tree, ns, 2)
+        elif ns:
+            # Fallback: flat list
+            self._uid_counter = 0
+            for name, info in ns.items():
+                self._uid_counter += 1
+                ct = info.get("name", name)
+                cattrs = f'ID="{ct}" name="{ct}" _uid="{self._uid_counter}" status="{info.get("status","IDLE")}"'
+                lines.append(f"    <Action {cattrs}/>")
         lines.append("  </BehaviorTree>")
         lines.append("</root>")
         return "\n".join(lines)
+
+    def _gen_xml_node(self, lines, node, ns, indent):
+        self._uid_counter += 1
+        uid = self._uid_counter
+        cls_name = node.get("class", "Action")
+        name = node.get("name", cls_name)
+        ntype = node.get("type", "Action")
+        info = ns.get(cls_name, {})
+        status = info.get("status", "IDLE")
+        attrs = f'ID="{name}" name="{name}" _uid="{uid}" status="{status}"'
+        children = node.get("children", [])
+        pad = "  " * indent
+        if children:
+            lines.append(f'{pad}<{ntype} {attrs}>')
+            for child in children:
+                self._gen_xml_node(lines, child, ns, indent + 1)
+            lines.append(f'{pad}</{ntype}>')
+        else:
+            lines.append(f'{pad}<{ntype} {attrs}/>')
+
     def _zmq_loop(self):
         if zmq is None:
             return
@@ -147,8 +153,8 @@ class Groot2Server(Node):
                         status_data += struct.pack('<HB', uid, sv)
 
                     header = struct.pack('<BBL', 2, ord('S'), req_uid)
-                    reply = header + tree_uuid + struct.pack('<I', len(status_data)) + status_data
-                    sock.send(reply)
+                    reply_header = header + tree_uuid + struct.pack('<I', len(status_data))
+                    sock.send_multipart([reply_header, status_data])
 
                 elif req_type == 'B':  # BLACKBOARD（全量转发）
                     bb_data = json.dumps(self._bt_status, ensure_ascii=False).encode('utf-8')

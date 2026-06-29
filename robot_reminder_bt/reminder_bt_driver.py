@@ -169,6 +169,7 @@ class ReminderBTDriver(Node):
                 for r in bb.get("pending_reminders", [])
             ),
             "node_statuses": self._collect_node_statuses(),
+            "tree_structure": self._collect_tree_structure(),
         }
         try:
             self.status_pub.publish(
@@ -183,6 +184,26 @@ class ReminderBTDriver(Node):
         if root:
             self._walk_node(root, result)
         return result
+
+    def _collect_tree_structure(self):
+        # Collect nested tree structure for XML generation
+        root = getattr(self.bt, "root", None)
+        if root:
+            return self._walk_structure(root)
+        return {}
+
+    def _walk_structure(self, node):
+        cls_name = type(node).__name__
+        name = getattr(node, "name", cls_name)
+        children = []
+        for child in getattr(node, "_children", []):
+            children.append(self._walk_structure(child))
+        # Determine node type for Groot2
+        if "Condition" in cls_name: ntype = "Condition"
+        elif "Sequence" in cls_name or "Fallback" in cls_name or "Reactive" in cls_name: ntype = "ReactiveSequence"
+        elif "Async" in cls_name or "Generate" in cls_name: ntype = "AsyncAction"
+        else: ntype = "Action"
+        return {"name": name, "type": ntype, "class": cls_name, "children": children}
 
     def _walk_node(self, node, result: dict):
         result[type(node).__name__] = {
