@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os, json
 import threading
 import paramiko
@@ -157,17 +157,8 @@ def _ssh_delete_reminder(content, reminder_time):
         return "0"
 _board_speak_lock = threading.Lock()
 def _board_speak(text):
-    """Blocking: speak on board via ROS2 /tts/text topic + aplay.
-    
-    Flow: SSH → upload script → run script (blocking):
-      1. rclpy.init, subscribe /tts/audio
-      2. Publish text to /tts/text
-      3. Collect audio chunks → save WAV
-      4. amixer unmute → aplay (blocking) → cleanup
-    
-    Returns True on success, False on failure.
-    Computer-side lock serializes calls; SSH blocks until playback finishes.
-    No lock files, no nohup, no action client.
+    """Speak on board via voice_bridge /voice/speak Action.
+    Flow: SSH -> setup_audio.sh -> set_volume 90 -> ros2 action /voice/speak
     """
     text = text.strip()
     if not text:
@@ -177,23 +168,24 @@ def _board_speak(text):
             cli = paramiko.SSHClient()
             cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             cli.connect(BOARD_HOST, username=BOARD_USER, password=BOARD_PASS, timeout=5)
-            
+
             safe = text.replace('"', '\\"')
             cmd = (
-                
                 "source /opt/ros/humble/setup.bash; "
                 "source /home/cat/ros2_ws/install/setup.bash; "
                 "bash /home/cat/setup_audio.sh 2>/dev/null; "
-                'ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak "{text: \\"' + safe + '\\", audio_path: \\"\\"}" -t 60 2>&1'
+                'timeout 3 ros2 service call /audio/set_volume robot_audio_node/srv/SetVolume "{volume: 90}" 2>&1 > /dev/null; '
+                'ros2 action send_goal -f /voice/speak robot_voice_bridge/action/Speak "{text: \\"' + safe + '\\", audio_path: \\"\\"}" -t 30 2>&1; '
+                "bash /home/cat/setup_audio.sh 2>/dev/null"
             )
             transport = cli.get_transport()
             if transport:
                 transport.set_keepalive(30)
-            _, stdout, stderr = cli.exec_command(cmd, timeout=60)
+            _, stdout, stderr = cli.exec_command(cmd, timeout=40)
             out = stdout.read().decode("utf-8", errors="replace").strip()
             err = stderr.read().decode("utf-8", errors="replace").strip()[:200]
             cli.close()
-            
+
             if "SUCCEEDED" in out and "success: true" in out:
                 print("[BoardSpeak] OK: " + text[:30] + "...")
                 return True
@@ -205,15 +197,7 @@ def _board_speak(text):
         except Exception as e:
             print("[BoardSpeak] Error: " + str(e))
             return False
-class BoardReminderSync(BaseModel):
-    command_id: str = ""
-    title: str
-    content: str = ""
-    reminder_time: str = ""
-    file_path: str = ""
-    received_at: str = ""
-    status: str = "received"
-    repeat_type: str = ""
+
 @router.post("/sync")
 async def sync_board_reminder(data: BoardReminderSync):
     records = _load_cache()
@@ -405,4 +389,5 @@ async def play_board_reminder(reminder_id: int):
     except Exception as _fe:
         print(f"[Play] Local fallback error: {_fe}")
     return {"success": False, "message": "Playback failed: " + content_to_play[:20]}
+
 

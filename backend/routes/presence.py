@@ -105,7 +105,8 @@ def _play_on_board_tts(title, content):
         print("[BoardTTS] Empty text, skipping")
         return
     from routes.board import _board_speak
-    _board_speak(text)
+    ok = _board_speak(text)
+    if not ok: raise Exception('Board TTS returned False')
 
 def process_reminders():
     if not os.path.exists(CACHE_FILE):
@@ -208,6 +209,7 @@ def process_reminders():
                     _update_remote_status(cid, new_st)
                 except Exception as e:
                     log.warning(f"Status sync error for {cid}: {e}")
+
 
 
 
