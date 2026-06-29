@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd"
+            schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_floor_seg</name>
+  <version>0.0.0</version>
+  <description>RK3576 澧欓潰鍦版澘瀹炰緥鍒嗗壊 ROS2 鑺傜偣锛坴2 妯″瀷锛?/description>
+  <maintainer email="liuzhiyong@52wana.com">cat</maintainer>
+  <license>MIT</license>
+
+
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-flask</exec_depend>
+</package>

@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='utf-8'?>
+<package format="3">
+  <name>robot_audio_node</name>
+  <version>0.0.3</version>
+  <description>Unified audio playback node - file + stream, single topic control</description>
+  <maintainer email="cat@dahuan001.local">cat</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <exec_depend>libasound2</exec_depend>
+  <exec_depend>libavformat</exec_depend>
+  <exec_depend>libavcodec</exec_depend>
+  <exec_depend>libswresample</exec_depend>
+  <exec_depend>libavutil</exec_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

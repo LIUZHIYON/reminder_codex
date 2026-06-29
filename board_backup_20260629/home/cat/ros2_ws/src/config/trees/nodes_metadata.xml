@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<!--
+  nodes_metadata.xml — Groot2 自定义节点定义
+
+  在 Groot2 中导入:
+    File → Import Node Definitions → 选择此文件
+
+  之后 CheckPendingReminder、GenerateTTS 等自定义节点
+  会出现在左侧节点面板的 "reminder" 分组中。
+-->
+<root BTCPP_format="4">
+
+    <NodeGroups>
+        <Group name="提醒系统 (Reminder)">
+            <Description>提醒播报系统的自定义行为树节点</Description>
+
+            <CustomNode name="CheckPendingReminder" category="condition">
+                <Description>检查是否有待触发的提醒（调用提醒系统 API）</Description>
+                <input_port name="api_url" type="std::string"
+                    default="http://192.168.1.70:5000"/>
+                <output_port name="reminder_list" type="std::string"/>
+            </CustomNode>
+
+            <CustomNode name="FetchReminder" category="action">
+                <Description>从待处理列表取第一条提醒内容</Description>
+                <input_port name="reminder_list" type="std::string"/>
+                <output_port name="current_reminder" type="std::string"/>
+            </CustomNode>
+
+            <CustomNode name="GenerateTTS" category="action">
+                <Description>合成语音（发布文本到 /tts/text 话题）</Description>
+                <input_port name="reminder" type="std::string"/>
+                <input_port name="test_text" type="std::string"/>
+            </CustomNode>
+
+            <CustomNode name="PlayAudio" category="action">
+                <Description>播放语音（等待 /audio/complete）</Description>
+                <input_port name="reminder" type="std::string"/>
+            </CustomNode>
+
+            <CustomNode name="NotifyWebSocket" category="action">
+                <Description>通过 WebSocket 通知服务器</Description>
+                <input_port name="reminder" type="std::string"/>
+            </CustomNode>
+
+            <CustomNode name="MarkTriggered" category="action">
+                <Description>标记提醒已触发（HTTP POST）</Description>
+                <input_port name="reminder" type="std::string"/>
+            </CustomNode>
+
+            <CustomNode name="LogReminder" category="action">
+                <Description>记录播报日志</Description>
+                <input_port name="reminder" type="std::string"/>
+            </CustomNode>
+
+        </Group>
+
+        <Group name="系统 (System)">
+            <CustomNode name="Delay" category="decorator">
+                <Description>延迟后执行子节点</Description>
+                <input_port name="delay_msec" type="uint32_t" default="100"/>
+            </CustomNode>
+        </Group>
+    </NodeGroups>
+
+</root>

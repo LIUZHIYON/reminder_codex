@@ -1,0 +1,14 @@
+tts_node:
+  ros__parameters:
+    text_topic: "/tts/text"
+    audio_topic: "/tts/audio"
+    status_topic: "/tts/status"
+    api_key: "85e33321-12ab-45f8-b207-5c778db01e13"
+    resource_id: "seed-icl-2.0"
+    speaker: "S_xGkP0iD22"
+    audio_format: "pcm"
+    sample_rate: 24000
+    speech_rate: 0.0
+    volume_rate: 0.0
+    enable_subtitle: false
+    timeout: 30

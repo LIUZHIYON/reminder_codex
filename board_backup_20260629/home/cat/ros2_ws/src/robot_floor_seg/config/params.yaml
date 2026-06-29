@@ -1,0 +1,7 @@
+/robot_wall_floor_seg:
+  ros__parameters:
+    web_port: 8080
+    camera_id: '/dev/video11'
+    width: 640
+    height: 480
+    skip_frames: 2

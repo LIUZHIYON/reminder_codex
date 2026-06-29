@@ -1,0 +1,13 @@
+[Unit]
+Description=Audio setup for speaker (spk switch, volume)
+After=multi-user.target
+Before=cam-record.service
+
+[Service]
+Type=oneshot
+User=cat
+Group=audio
+ExecStart=/bin/bash /home/cat/setup_audio.sh
+
+[Install]
+WantedBy=multi-user.target

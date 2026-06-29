@@ -1,0 +1,16 @@
+[Unit]
+Description=提醒系统 Reminder Service
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=cat
+WorkingDirectory=/home/cat/reminder_system
+ExecStart=/usr/bin/python3 /home/cat/reminder_system/run.py
+Restart=always
+RestartSec=5
+Environment=PYTHONIOENCODING=utf-8
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

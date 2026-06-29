@@ -1,0 +1,13 @@
+# Goal
+string text
+string audio_path
+---
+# Result
+bool success
+string message
+---
+# Feedback
+string status             # ACCUMULATING / PLAYING / PAUSED / QUEUED
+int32 queue_position      # 0=正在执行
+int32 progress            # 0-100
+string message

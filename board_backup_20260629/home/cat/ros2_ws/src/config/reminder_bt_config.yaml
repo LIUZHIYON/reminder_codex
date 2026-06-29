@@ -1,0 +1,15 @@
+# robot_reminder_bt 配置参数
+reminder_bt_node:
+  ros__parameters:
+    # 提醒系统 API
+    reminder_api_url: "http://192.168.1.70:5000"
+
+    # 行为树参数
+    tick_interval_ms: 100        # 主循环 tick 间隔（毫秒）
+    check_interval_ms: 2000      # 检查提醒间隔（毫秒）
+
+    # ROS2 话题
+    tts_text_topic: "/tts/text"          # 发往 doubao_tts 的文本
+    command_topic: "/robot/command"      # 来自 websocket 的命令
+    status_topic: "/robot/status"        # 状态话题
+    websocket_chat_topic: "/robot/chat" # 聊天话题

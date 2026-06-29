@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>bt_relay</name>
+  <version>0.1.0</version>
+  <description>BehaviorTree.CPP relay scheduler — replaces Python 5s polling loop</description>
+  <maintainer email="cat@aipet.local">cat</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>std_msgs</depend>
+  <depend>behaviortree_cpp_v3</depend>
+  <depend>robot_voice_bridge</depend>
+  <depend>nlohmann-json-dev</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

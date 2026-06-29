@@ -1,0 +1,16 @@
+[Unit]
+Description=Board WS Client for AI Pet Reminder
+After=network.target
+
+[Service]
+Type=simple
+User=cat
+WorkingDirectory=/home/cat/reminder_system
+ExecStart=/usr/bin/python3 /home/cat/reminder_system/board_ws_client.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/cat/reminder_system/logs/ws_client.log
+StandardError=append:/home/cat/reminder_system/logs/ws_client.log
+
+[Install]
+WantedBy=multi-user.target

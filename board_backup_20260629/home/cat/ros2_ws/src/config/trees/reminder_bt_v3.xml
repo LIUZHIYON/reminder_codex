@@ -1,0 +1,99 @@
+<?xml version="1.0"?>
+<!--
+  reminder_bt_v3.xml — 提醒行为树 (BT.CPP v3/v4 格式)
+
+  此 XML 与 Python bt_engine 版本的行为树逻辑一致，
+  可直接在板子上用 BehaviorTree.CPP 库加载。
+
+  使用方式:
+    ros2 run robot_reminder_bt reminder_bt_node --ros-args \
+      -p bt_xml:=config/trees/reminder_bt_v3.xml
+
+  树结构:
+
+    ReactiveSequence("reminder_main_loop")
+    ├── CheckPendingReminder         (条件: 检查提醒)
+    └── Sequence("execute_reminder")
+        ├── FetchReminder            (动作: 取提醒)
+        ├── RetryUntilSuccessful("tts_retry")
+        │   └── GenerateTTS          (动作: 合成语音)
+        ├── RetryUntilSuccessful("play_retry")
+        │   └── PlayAudio            (动作: 播放)
+        ├── RetryUntilSuccessful("ws_retry")
+        │   └── NotifyWebSocket      (动作: WS通知)
+        ├── MarkTriggered            (动作: 标记触发)
+        └── LogReminder              (动作: 记录日志)
+-->
+<root BTCPP_format="4">
+
+    <!-- ========== 完整的提醒树 ========== -->
+    <BehaviorTree ID="ReminderTree">
+        <ReactiveSequence name="reminder_main_loop">
+            <CheckPendingReminder
+                name="has_pending_reminder"
+                api_url="{api_url}"
+                reminder_list="{pending_reminders}"/>
+
+            <Sequence name="execute_reminder">
+                <FetchReminder
+                    name="fetch_reminder"
+                    reminder_list="{pending_reminders}"
+                    current_reminder="{current_reminder}"/>
+
+                <RetryUntilSuccessful
+                    name="tts_retry"
+                    num_attempts="2">
+                    <GenerateTTS
+                        name="generate_tts"
+                        reminder="{current_reminder}"/>
+                </RetryUntilSuccessful>
+
+                <RetryUntilSuccessful
+                    name="play_retry"
+                    num_attempts="2">
+                    <PlayAudio
+                        name="play_audio"
+                        reminder="{current_reminder}"/>
+                </RetryUntilSuccessful>
+
+                <RetryUntilSuccessful
+                    name="ws_retry"
+                    num_attempts="3">
+                    <NotifyWebSocket
+                        name="notify_ws"
+                        reminder="{current_reminder}"/>
+                </RetryUntilSuccessful>
+
+                <MarkTriggered
+                    name="mark_triggered"
+                    reminder="{current_reminder}"/>
+
+                <LogReminder
+                    name="log_reminder"
+                    reminder="{current_reminder}"/>
+            </Sequence>
+        </ReactiveSequence>
+    </BehaviorTree>
+
+    <!-- ========== 仅检查树（调试用） ========== -->
+    <BehaviorTree ID="CheckOnlyTree">
+        <CheckPendingReminder
+            name="has_pending_reminder"
+            api_url="{api_url}"
+            reminder_list="{pending_reminders}"/>
+    </BehaviorTree>
+
+    <!-- ========== TTS 测试树（调试用） ========== -->
+    <BehaviorTree ID="TtsTestTree">
+        <Sequence name="tts_test">
+            <GenerateTTS
+                name="say_hello"
+                reminder="test_reminder"
+                test_text="大家好，我是语音助手，现在进行豆包语音合成测试"/>
+            <PlayAudio
+                name="play_test"
+                reminder="test_reminder"/>
+        </Sequence>
+    </BehaviorTree>
+
+</root>

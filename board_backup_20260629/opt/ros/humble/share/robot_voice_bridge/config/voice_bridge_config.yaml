@@ -1,0 +1,11 @@
+voice_bridge:
+  ros__parameters:
+    tts_text_topic: "/tts/text"
+    tts_audio_topic: "/tts/audio"
+    tts_status_topic: "/tts/status"
+    audio_cmd_topic: "/audio/audio_cmd"
+    audio_complete_topic: "/audio/complete"
+    max_queue_size: 10
+    tts_silence_timeout_ms: 2000
+    chunk_duration_ms: 40
+    resample_to_48k_stereo: false

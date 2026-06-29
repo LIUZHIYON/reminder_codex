@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>提醒系统管理面板</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-left">
+                <h1>⏰ 提醒系统管理面板</h1>
+                <div class="clock" id="clock">--:--:--</div>
+            </div>
+            <div class="header-actions">
+                <button onclick="refreshData()" class="btn btn-primary">🔄 刷新</button>
+                <button onclick="triggerCheck()" class="btn btn-warning">⚡ 立即检查</button>
+                <button onclick="reloadJson()" class="btn btn-info">📄 导入 JSON</button>
+                <button id="auto-play-toggle" onclick="toggleAutoPlay()" class="btn btn-success">🔊 自动播报: 开</button>
+                <button onclick="runDiagnostic()" class="btn" style="background:#a78bfa">🔧 诊断</button>
+            </div>
+        </header>
+
+        <!-- 统计卡片 -->
+        <section class="stats-grid" id="stats-cards">
+            <div class="stat-card pending">
+                <span class="stat-value" id="stat-pending">0</span>
+                <span class="stat-label">待触发</span>
+            </div>
+            <div class="stat-card triggered">
+                <span class="stat-value" id="stat-triggered">0</span>
+                <span class="stat-label">已触发</span>
+            </div>
+            <div class="stat-card failed">
+                <span class="stat-value" id="stat-failed">0</span>
+                <span class="stat-label">失败</span>
+            </div>
+            <div class="stat-card total">
+                <span class="stat-value" id="stat-total">0</span>
+                <span class="stat-label">总计</span>
+            </div>
+            <div class="stat-card messages">
+                <span class="stat-value" id="stat-msgs">0</span>
+                <span class="stat-label">聊天记录</span>
+            </div>
+            <div class="stat-card tts">
+                <span class="stat-value" id="stat-tts">0</span>
+                <span class="stat-label">TTS 播报</span>
+            </div>
+        </section>
+
+        <!-- 添加提醒表单 -->
+        <section class="add-reminder">
+            <h2>✏️ 添加提醒</h2>
+            <form id="add-form" onsubmit="addReminder(event)">
+                <div class="form-row">
+                    <div class="form-group form-group-content">
+                        <label for="reminder-content">提醒内容</label>
+                        <input type="text" id="reminder-content" placeholder="例如：该吃饭了" required>
+                    </div>
+                    <div class="form-group form-group-time">
+                        <label for="reminder-time">提醒时间</label>
+                        <input type="datetime-local" id="reminder-time" required>
+                    </div>
+                    <div class="form-group form-group-btn">
+                        <button type="submit" class="btn btn-primary btn-add">➕ 添加提醒</button>
+                    </div>
+                </div>
+                <div class="quick-times">
+                    <span class="quick-label">快速设置：</span>
+                    <button type="button" class="quick-btn" data-minutes="1">1分钟后</button>
+                    <button type="button" class="quick-btn" data-minutes="5">5分钟后</button>
+                    <button type="button" class="quick-btn" data-minutes="15">15分钟后</button>
+                    <button type="button" class="quick-btn" data-minutes="30">30分钟后</button>
+                    <button type="button" class="quick-btn" data-minutes="60">1小时后</button>
+                    <button type="button" class="quick-btn" onclick="setTomorrow()">明天</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- 下一条提醒 + TTS测试 -->
+        <div class="info-grid">
+            <section class="info-card next-reminder" id="next-reminder-section">
+                <h3>📌 下一条提醒</h3>
+                <div id="next-reminder-content">
+                    <span class="placeholder">无待处理提醒 ✅</span>
+                </div>
+            </section>
+
+            <section class="info-card scheduler-status">
+                <h3>⚙️ 调度器状态</h3>
+                <div id="scheduler-stats">
+                    <span class="placeholder">加载中...</span>
+                </div>
+            </section>
+        </div>
+
+        <!-- TTS 语音测试 -->
+        <section class="add-reminder tts-test">
+            <h3>🔊 语音播报测试</h3>
+            <div class="tts-test-row">
+                <input type="text" id="tts-test-text" placeholder="输入要测试的文字..." value="您好，欢迎使用提醒系统">
+                <button onclick="testTtsBoard()" class="btn btn-primary">🔊 板子播报</button>
+                <button onclick="testTtsWeb()" class="btn btn-info">🌐 浏览器试听</button>
+            </div>
+            <div id="tts-test-result" style="margin-top:8px;font-size:13px;color:var(--text-muted)"></div>
+        </section>
+
+        <!-- 提醒列表 -->
+        <section class="reminder-list">
+            <h2>📋 提醒记录</h2>
+            <div class="filter-bar">
+                <button class="filter-btn active" data-status="">全部</button>
+                <button class="filter-btn" data-status="pending">待触发</button>
+                <button class="filter-btn" data-status="triggered">已触发</button>
+                <button class="filter-btn" data-status="failed">失败</button>
+            </div>
+            <table id="reminder-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>提醒内容</th>
+                        <th>提醒时间</th>
+                        <th>状态</th>
+                        <th>触发时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="reminder-tbody">
+                    <tr><td colspan="6" class="loading">加载中...</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- TTS 日志 -->
+        <section class="tts-section">
+            <h2>🔊 TTS 播报日志</h2>
+            <table id="tts-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>内容</th>
+                        <th>状态</th>
+                        <th>音频文件</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody id="tts-tbody">
+                    <tr><td colspan="5" class="loading">加载中...</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <!-- 编辑提醒弹窗 -->
+    <div class="modal-overlay" id="edit-modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>✏️ 编辑提醒</h3>
+                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-id">
+                <div class="form-group">
+                    <label for="edit-content">提醒内容</label>
+                    <input type="text" id="edit-content" placeholder="提醒内容">
+                </div>
+                <div class="form-group">
+                    <label for="edit-time">提醒时间</label>
+                    <input type="datetime-local" id="edit-time">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-info" onclick="saveEdit()">💾 保存</button>
+                <button class="btn" onclick="closeEditModal()" style="background:#64748b">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 隐藏的 audio 播放器 -->
+    <audio id="audio-player" style="display:none"></audio>
+    <audio id="auto-player" style="display:none"></audio>
+
+    <script>
+        // ====== 自动播报跟踪 ======
+        let lastTriggeredCount = 0;
+        let autoPlayBrowser = localStorage.getItem('reminder_autoplay') !== '0';  // 浏览器端自动播报开关，默认开
+        let lastAutoPlayTime = 0;    // 防止重复播报
+        
+        function checkNewTriggered(stats) {
+            const current = stats.triggered || 0;
+            if (current > lastTriggeredCount && lastTriggeredCount > 0 && autoPlayBrowser) {
+                const now = Date.now();
+                if (now - lastAutoPlayTime < 8000) return; // 8秒内不重复
+                lastAutoPlayTime = now;
+                
+                fetch('/api/reminders?status=triggered&limit=1')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success && data.data.length > 0) {
+                            const reminder = data.data[0];
+                            const content = reminder.content;
+                            // 用隐藏的 audio 播放
+                            const player = document.getElementById('auto-player');
+                            // 先重置再设置新源
+                            player.pause();
+                            player.currentTime = 0;
+                            player.src = '/api/tts/generate?text=' + encodeURIComponent(content);
+                            player.load();
+                            player.play().then(() => {
+                                // 播放成功！显示一个短暂的通知
+                                showToast('🔊 ' + content.substring(0, 20) + '...', 'success');
+                            }).catch(e => {
+                                // 浏览器 autoplay 被阻止，显示更醒目的提示
+                                console.warn('Autoplay blocked:', e.message);
+                                // 显示弹出式通知
+                                showAutoPlayNotification(content);
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }
+            lastTriggeredCount = current;
+        }
+
+        function showAutoPlayNotification(content) {
+            // 移除之前的通知
+            const existing = document.querySelector('.autoplay-notification');
+            if (existing) existing.remove();
+            
+            const notif = document.createElement('div');
+            notif.className = 'autoplay-notification';
+            notif.innerHTML = `
+                <div class="autoplay-inner">
+                    <span class="autoplay-icon">🔊</span>
+                    <span class="autoplay-text">${escapeHtml(content)}</span>
+                    <button class="autoplay-btn" onclick="playAudioNow('${escapeHtml(content)}')">点击试听</button>
+                    <button class="autoplay-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                </div>
+            `;
+            document.body.appendChild(notif);
+            setTimeout(() => notif.classList.add('show'), 10);
+        }
+
+        function playAudioNow(text) {
+            const player = document.getElementById('auto-player');
+            player.pause();
+            player.currentTime = 0;
+            player.src = '/api/tts/generate?text=' + encodeURIComponent(text);
+            player.load();
+            player.play().catch(e => {
+                showToast('❌ 播放失败，请检查浏览器设置: ' + e.message, 'error');
+            });
+            // 移除通知
+            const notif = document.querySelector('.autoplay-notification');
+            if (notif) notif.remove();
+        }
+
+        // ====== 自动播报开关 ======
+        function toggleAutoPlay() {
+            autoPlayBrowser = !autoPlayBrowser;
+            const btn = document.getElementById('auto-play-toggle');
+            if (btn) {
+                btn.textContent = autoPlayBrowser ? '🔊 自动播报: 开' : '🔇 自动播报: 关';
+                btn.className = autoPlayBrowser ? 'btn btn-success' : 'btn btn-secondary';
+            }
+            localStorage.setItem('reminder_autoplay', autoPlayBrowser ? '1' : '0');
+        }
+
+        // ====== 实时时钟 ======
+        function updateClock() {
+            const now = new Date();
+            const s = now.toLocaleString('zh-CN', { hour12: false,
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+            document.getElementById('clock').textContent = '🕐 ' + s;
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+
+        // ====== 初始化日期控件默认值 ======
+        function initDateTime() {
+            const now = new Date();
+            now.setHours(now.getHours() + 1);
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            const h = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('reminder-time').value = `${y}-${m}-${d}T${h}:${min}`;
+        }
+        initDateTime();
+
+        // ====== 快速设置时间 ======
+        document.querySelectorAll('.quick-btn[data-minutes]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const mins = parseInt(this.dataset.minutes);
+                const dt = new Date(Date.now() + mins * 60000);
+                setInputDateTime(dt);
+            });
+        });
+
+        function setTomorrow() {
+            const dt = new Date(Date.now() + 86400000);
+            dt.setHours(9, 0, 0, 0);
+            setInputDateTime(dt);
+        }
+
+        function setInputDateTime(dt) {
+            const y = dt.getFullYear();
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const d = String(dt.getDate()).padStart(2, '0');
+            const h = String(dt.getHours()).padStart(2, '0');
+            const min = String(dt.getMinutes()).padStart(2, '0');
+            document.getElementById('reminder-time').value = `${y}-${m}-${d}T${h}:${min}`;
+        }
+
+        // ====== 添加提醒 ======
+        function addReminder(event) {
+            event.preventDefault();
+            const content = document.getElementById('reminder-content').value.trim();
+            const timeRaw = document.getElementById('reminder-time').value;
+            if (!content) { alert('请输入提醒内容'); return; }
+            if (!timeRaw) { alert('请选择提醒时间'); return; }
+            const reminder_time = timeRaw.replace('T', ' ') + ':00';
+
+            fetch('/api/reminders', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({content, reminder_time})
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    document.getElementById('reminder-content').value = '';
+                    initDateTime();
+                    refreshData();
+                    showToast('✅ 提醒已添加', 'success');
+                } else {
+                    showToast('⚠️ ' + d.message, 'warning');
+                }
+            });
+        }
+
+        // ====== 播报音频（浏览器播放） ======
+        function playTts(text) {
+            const player = document.getElementById('audio-player');
+            const url = '/api/tts/generate?text=' + encodeURIComponent(text);
+            player.src = url;
+            player.play().catch(e => {
+                showToast('❌ 播放失败: ' + e.message, 'error');
+            });
+        }
+
+        // ====== 更新统计 ======
+        function updateStats() {
+            fetch('/api/stats')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    const s = data.data;
+                    // 检测是否有新触发的提醒
+                    checkNewTriggered(s);
+                    document.getElementById('stat-pending').textContent = s.pending || 0;
+                    document.getElementById('stat-triggered').textContent = s.triggered || 0;
+                    document.getElementById('stat-failed').textContent = s.failed || 0;
+                    document.getElementById('stat-total').textContent = s.total_reminders || 0;
+                    document.getElementById('stat-msgs').textContent = s.total_messages || 0;
+                    document.getElementById('stat-tts').textContent = s.tts_count || 0;
+
+                    const nextDiv = document.getElementById('next-reminder-content');
+                    if (s.next_reminder) {
+                        nextDiv.innerHTML = `
+                            <div class="next-item">
+                                <span class="next-text">${escapeHtml(s.next_reminder.content)}</span>
+                                <span class="next-time">🕐 ${s.next_reminder.reminder_time}</span>
+                                <button onclick="playTts('${escapeHtml(s.next_reminder.content)}')" class="btn-sm" title="试听">🌐</button>
+                                <button onclick="playNextOnBoard()" class="btn-sm" title="板子播报">🔊</button>
+                            </div>
+                        `;
+                    } else {
+                        nextDiv.innerHTML = '<span class="placeholder">无待处理提醒 ✅</span>';
+                    }
+                });
+        }
+
+        function playNextOnBoard() {
+            // 找到下一条提醒的内容并播报
+            const nextText = document.querySelector('.next-text');
+            if (!nextText) { showToast('⚠️ 没有下一条提醒', 'warning'); return; }
+            const text = nextText.textContent;
+            fetch('/api/test-tts?text=' + encodeURIComponent(text))
+                .then(r => r.json())
+                .then(d => showToast(d.success ? '🔊 板子播放中' : '❌ 失败: ' + d.message, d.success ? 'success' : 'error'));
+        }
+
+        // ====== 调度器状态 ======
+        function loadSchedulerStats() {
+            fetch('/api/scheduler/stats')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    const s = data.data;
+                    const div = document.getElementById('scheduler-stats');
+                    div.innerHTML = `
+                        <div class="scheduler-grid">
+                            <span class="sched-item">🔄 检查: <strong>${s.total_checks}</strong> 次</span>
+                            <span class="sched-item">🔊 已播报: <strong>${s.reminders_triggered}</strong> 条</span>
+                            <span class="sched-item">📄 JSON导入: <strong>${s.json_imports}</strong> 次</span>
+                            <span class="sched-item">🚀 状态: <strong class="${s.running ? 'text-success' : 'text-danger'}">${s.running ? '运行中 ✅' : '已停止 ❌'}</strong></span>
+                        </div>
+                    `;
+                })
+                .catch(() => {
+                    document.getElementById('scheduler-stats').innerHTML = '<span class="placeholder">获取失败</span>';
+                });
+        }
+
+        // ====== TTS 测试 ======
+        function testTtsBoard() {
+            const text = document.getElementById('tts-test-text').value.trim();
+            if (!text) { showToast('⚠️ 请输入测试文字', 'warning'); return; }
+            const resultDiv = document.getElementById('tts-test-result');
+            resultDiv.textContent = '⏳ 板子正在播报...';
+            fetch('/api/test-tts?text=' + encodeURIComponent(text))
+                .then(r => r.json())
+                .then(d => {
+                    resultDiv.textContent = d.success ? '✅ 播报成功' : '❌ 失败: ' + d.message;
+                    if (d.success) refreshData();
+                })
+                .catch(e => { resultDiv.textContent = '❌ ' + e.message; });
+        }
+
+        function testTtsWeb() {
+            const text = document.getElementById('tts-test-text').value.trim();
+            if (!text) { showToast('⚠️ 请输入测试文字', 'warning'); return; }
+            const player = document.getElementById('audio-player');
+            const resultDiv = document.getElementById('tts-test-result');
+            player.src = '/api/tts/generate?text=' + encodeURIComponent(text);
+            player.play().then(() => {
+                resultDiv.textContent = '🌐 浏览器播放中...';
+            }).catch(e => {
+                resultDiv.textContent = '❌ 播放失败: ' + e.message;
+            });
+        }
+
+        // ====== 加载提醒列表 ======
+        function loadReminders(status) {
+            status = status || getActiveFilter();
+            const url = status ? `/api/reminders?status=${status}` : '/api/reminders';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('reminder-tbody');
+                    if (!data.success || !data.data.length) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无数据</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.data.map(r => `
+                        <tr class="status-${r.status}">
+                            <td>${r.id}</td>
+                            <td class="content-cell" title="${escapeHtml(r.content)}">${escapeHtml(r.content)}</td>
+                            <td>${r.reminder_time || '-'}</td>
+                            <td><span class="badge badge-${r.status}">${statusLabel(r.status)}</span></td>
+                            <td>${r.triggered_at || '-'}</td>
+                            <td class="actions">
+                                <button onclick="playTts('${escapeHtml(r.content)}')" class="btn-sm" title="浏览器试听">🌐</button>
+                                <button onclick="boardReplay(${r.id})" class="btn-sm" title="板子播报">🔊</button>
+                                <button onclick="openEditModal(${r.id}, '${escapeHtml(r.content)}', '${r.reminder_time || ''}')" class="btn-sm btn-edit" title="编辑">✏️</button>
+                                <button onclick="deleteReminder(${r.id})" class="btn-sm btn-danger" title="删除">🗑️</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                });
+        }
+
+        // ====== 加载 TTS 日志 ======
+        function loadTtsLogs() {
+            fetch('/api/tts-logs')
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('tts-tbody');
+                    if (!data.success || !data.data.length) {
+                        tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无日志</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.data.map(log => `
+                        <tr>
+                            <td>${log.id}</td>
+                            <td class="content-cell" title="${escapeHtml(log.content)}">${escapeHtml(log.content)}</td>
+                            <td><span class="badge badge-${log.status}">${statusLabel(log.status)}</span></td>
+                            <td class="audio-cell">${log.audio_file || '-'}</td>
+                            <td>${log.created_at}</td>
+                        </tr>
+                    `).join('');
+                });
+        }
+
+        // ====== 工具函数 ======
+        function statusLabel(s) {
+            const map = {
+                pending: '⏳ 待触发',
+                triggered: '✅ 已触发',
+                failed: '❌ 失败',
+                success: '✅ 成功',
+                replay: '🔁 重播'
+            };
+            return map[s] || s;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        function getActiveFilter() {
+            const active = document.querySelector('.filter-btn.active');
+            return active ? active.dataset.status : '';
+        }
+
+        function refreshData() {
+            updateStats();
+            loadReminders();
+            loadTtsLogs();
+            loadSchedulerStats();
+        }
+
+        function triggerCheck() {
+            fetch('/api/trigger-check')
+                .then(r => r.json())
+                .then(d => { showToast(d.message, 'info'); refreshData(); });
+        }
+
+        function reloadJson() {
+            fetch('/api/refresh')
+                .then(r => r.json())
+                .then(d => { showToast(d.message, 'info'); refreshData(); });
+        }
+
+        function runDiagnostic() {
+            showToast('🔧 正在诊断系统...', 'info');
+            fetch('/api/diagnostic')
+                .then(r => r.json())
+                .then(d => {
+                    if (!d.success) return;
+                    const diag = d.data;
+                    let msg = '=== 🛠️ 系统诊断 ===\n\n';
+                    msg += `TTS引擎: ${diag.tts_provider}\n`;
+                    msg += `音频设备: ${diag.audio_device}\n\n`;
+                    msg += '=== TTS工具 ===\n';
+                    for (const [k, v] of Object.entries(diag.tts_tools)) {
+                        msg += `  ${k}: ${v ? '✅' : '❌'}\n`;
+                    }
+                    msg += '\n=== 音频播放器 ===\n';
+                    for (const [k, v] of Object.entries(diag.players)) {
+                        msg += `  ${k}: ${v ? '✅' : '❌'}\n`;
+                    }
+                    if (diag.issues && diag.issues.length) {
+                        msg += '\n⚠️ 问题:\n';
+                        diag.issues.forEach(i => msg += `  - ${i}\n`);
+                    } else {
+                        msg += '\n✅ 未检测到问题\n';
+                    }
+                    if (diag.system) {
+                        msg += `\n系统: ${diag.system.platform}\n`;
+                    }
+                    alert(msg);
+                })
+                .catch(e => showToast('❌ 诊断失败: ' + e, 'error'));
+        }
+
+        function boardReplay(id) {
+            fetch(`/api/reminders/${id}/replay`, { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    showToast(d.message || (d.success ? '🔊 板子播放中' : '失败'), d.success ? 'success' : 'error');
+                    refreshData();
+                });
+        }
+
+        // ====== 删除提醒 ======
+        function deleteReminder(id) {
+            console.log('deleteReminder called with id:', id, 'type:', typeof id);
+            var url = '/api/reminders/' + id;
+            console.log('Fetch URL:', url);
+            
+            showConfirmDialog(
+                '确定删除这条提醒？',
+                function() {
+                    console.log('Executing delete for id:', id, 'url:', url);
+                    fetch(url, { method: 'DELETE' })
+                        .then(function(r) {
+                            console.log('Response status:', r.status, r.statusText);
+                            if (!r.ok) {
+                                throw new Error('HTTP ' + r.status + ': ' + r.statusText);
+                            }
+                            return r.json();
+                        })
+                        .then(function(d) {
+                            showToast(d.message, 'info');
+                            refreshData();
+                        })
+                        .catch(function(e) {
+                            console.error('Delete failed:', e);
+                            showToast('\u274c ' + e.message, 'error');
+                        });
+                }
+            );
+        }
+
+        // ====== 自定义确认弹窗 ======
+        function showConfirmDialog(message, onConfirm) {
+            var overlay = document.createElement('div');
+            overlay.className = 'confirm-overlay';
+            overlay.innerHTML = '<div class="confirm-box">' +
+                '<div class="confirm-msg">' + escapeHtml(message) + '</div>' +
+                '<div class="confirm-actions">' +
+                '<button class="btn btn-primary" id="confirm-yes">确定</button>' +
+                '<button class="btn btn-secondary" id="confirm-no">取消</button>' +
+                '</div></div>';
+            document.body.appendChild(overlay);
+            setTimeout(function() { overlay.classList.add('show'); }, 10);
+            document.getElementById('confirm-yes').addEventListener('click', function() {
+                overlay.remove();
+                if (onConfirm) onConfirm();
+            });
+            document.getElementById('confirm-no').addEventListener('click', function() {
+                overlay.remove();
+            });
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) overlay.remove();
+            });
+        }
+
+        // ====== 编辑提醒 ======
+        function openEditModal(id, content, time) {
+            document.getElementById('edit-id').value = id;
+            document.getElementById('edit-content').value = content;
+            if (time && time !== '-') {
+                document.getElementById('edit-time').value = time.replace(' ', 'T');
+            }
+            document.getElementById('edit-modal').classList.add('active');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        function saveEdit() {
+            const id = document.getElementById('edit-id').value;
+            const content = document.getElementById('edit-content').value.trim();
+            const timeRaw = document.getElementById('edit-time').value;
+            const reminder_time = timeRaw ? timeRaw.replace('T', ' ') + ':00' : '';
+
+            if (!content && !reminder_time) {
+                showToast('⚠️ 内容和时间至少填写一项', 'warning');
+                return;
+            }
+
+            fetch(`/api/reminders/${id}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({content: content || null, reminder_time: reminder_time || null})
+            })
+            .then(r => r.json())
+            .then(d => {
+                showToast(d.message, d.success ? 'success' : 'warning');
+                if (d.success) {
+                    closeEditModal();
+                    refreshData();
+                }
+            });
+        }
+
+        document.getElementById('edit-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeEditModal();
+        });
+
+        // ====== Toast 通知 ======
+        function showToast(msg, type) {
+            const existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type || 'info'}`;
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // ====== 筛选按钮 ======
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                loadReminders(this.dataset.status);
+            });
+        });
+
+        // ====== 自动刷新（每15秒） ======
+        refreshData();
+        setInterval(refreshData, 15000);
+
+        // 初始化自动播报按钮状态
+        const toggleBtn = document.getElementById('auto-play-toggle');
+        if (toggleBtn && !autoPlayBrowser) {
+            toggleBtn.textContent = '\uD83D\uDD07 自动播报: 关';
+            toggleBtn.className = 'btn btn-secondary';
+        }
+
+        // 用户点击页面时触发一次交互，使浏览器允许后续 autoplay
+        document.addEventListener('click', function enableAudio() {
+            document.removeEventListener('click', enableAudio);
+        }, { once: true });
+    </script>
+</body>
+</html>

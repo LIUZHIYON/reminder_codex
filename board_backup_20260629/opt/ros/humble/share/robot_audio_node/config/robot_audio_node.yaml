@@ -1,0 +1,9 @@
+robot_audio_node:
+  ros__parameters:
+    alsa_device: "default"
+    volume: 1.0
+    sub_audio_cmd: "/audio/audio_cmd"
+    pub_status: "/audio/status"
+    pub_complete: "/audio/complete"
+    srv_set_volume: "/audio/set_volume"
+    srv_get_volume: "/audio/get_volume"
