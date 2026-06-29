@@ -64,53 +64,40 @@ class Groot2Server(Node):
             pass
 
     def _build_tree_xml(self):
-        """根据 BT driver 的节点状态构建 Groot2 XML"""
+        # Build Groot2 XML dynamically from node_statuses with _uid
         ns = self._bt_status.get("node_statuses", {})
+        nk = list(ns.keys())
         lines = ['<?xml version="1.0"?>',
                  '<root BTCPP_format="4">',
                  '  <BehaviorTree ID="ReminderBT">']
-        self._build_xml_node(lines, ns, "ProcessReminders", "ReactiveSequence")
-        lines.append('  </BehaviorTree>')
-        lines.append('</root>')
-        return '\n'.join(lines)
-
-    def _build_xml_node(self, lines, ns, name, cls):
-        """递归构建 XML 节点"""
-        children = {
-            "ProcessReminders": ["CheckNewReminder", "ReminderProcess"],
-            "ReminderProcess": ["CheckTime", "RepeatBranch"],
-            "RepeatBranch": ["RepeatPath", "NoRepeatPath"],
-            "RepeatPath": ["MarkExecuting", "BuildTtsText", "GenerateTTS",
-                           "RescheduleRepeating", "PublishStatus"],
-            "NoRepeatPath": ["MarkExecuting", "BuildTtsText", "GenerateTTS",
-                             "PublishStatus"],
-        }
-        attrs = f'name="{name}"'
-        info = ns.get(cls, {})
-        if info:
-            status = info.get("status", "IDLE")
-            attrs += f' status="{status}"'
-        if name in children:
-            lines.append(f'    <{cls} ID="{name}" {attrs}>')
-            for child in children[name]:
-                self._build_xml_leaf(lines, child)
-            lines.append(f'    </{cls}>')
-        else:
-            lines.append(f'    <{cls} ID="{name}" {attrs}/>')
-
-    def _build_xml_leaf(self, lines, name):
-        cls_map = {
-            "CheckNewReminder": "Condition",
-            "CheckTime": "Condition",
-            "MarkExecuting": "Action",
-            "BuildTtsText": "Action",
-            "GenerateTTS": "AsyncAction",
-            "RescheduleRepeating": "Action",
-            "PublishStatus": "Action",
-        }
-        cls = cls_map.get(name, "Action")
-        lines.append(f'      <{cls} ID="{name}" name="{name}"/>')
-
+        if nk:
+            uid_map = {name: i+1 for i, name in enumerate(nk)}
+            # Group into controls vs leafs
+            control_types = {"Sequence", "Fallback", "ReactiveSequence"}
+            controls = [k for k in nk if any(ct in k for ct in control_types)]
+            leafs = [k for k in nk if k not in controls]
+            root_name = controls[0] if controls else nk[0]
+            root_uid = uid_map[root_name]
+            root_info = ns.get(root_name, {})
+            root_attrs = f'name="{root_name}" _uid="{root_uid}"'
+            if root_info: root_attrs += f' status="{root_info.get("status", "IDLE")}"'
+            lines.append(f'    <ReactiveSequence ID="{root_name}" {root_attrs}>')
+            children = controls[1:] + leafs if controls else nk[1:]
+            for child in children:
+                cuid = uid_map[child]
+                cinfo = ns.get(child, {})
+                # Map class name to Groot2 type
+                if "Condition" in child: ctype = "Condition"
+                elif "Sequence" in child or "Fallback" in child or "Reactive" in child: ctype = "ReactiveSequence"
+                elif "Async" in child or "Generate" in child: ctype = "AsyncAction"
+                else: ctype = "Action"
+                cattrs = f'ID="{child}" name="{child}" _uid="{cuid}"'
+                if cinfo: cattrs += f' status="{cinfo.get("status", "IDLE")}"'
+                lines.append(f"      <{ctype} {cattrs}/>")
+            lines.append("    </ReactiveSequence>")
+        lines.append("  </BehaviorTree>")
+        lines.append("</root>")
+        return "\n".join(lines)
     def _zmq_loop(self):
         if zmq is None:
             return
@@ -162,14 +149,8 @@ class Groot2Server(Node):
                     reply = header + tree_uuid + struct.pack('<I', len(status_data)) + status_data
                     sock.send(reply)
 
-                elif req_type == 'B':  # BLACKBOARD 请求（扩展协议）
-                    bb_data = json.dumps({
-                        "pending_count": self._bt_status.get("pending_count", 0),
-                        "reminder_title": self._bt_status.get("reminder_title", ""),
-                        "reminder_status": self._bt_status.get("reminder_status", ""),
-                        "tts_text": self._bt_status.get("tts_text", ""),
-                        "has_pending": self._bt_status.get("has_pending", False),
-                    }).encode('utf-8')
+                elif req_type == 'B':  # BLACKBOARD（全量转发）
+                    bb_data = json.dumps(self._bt_status, ensure_ascii=False).encode('utf-8')
                     header = struct.pack('<BBL', 2, ord('B'), req_uid)
                     reply = header + tree_uuid + struct.pack('<I', len(bb_data)) + bb_data
                     sock.send(reply)

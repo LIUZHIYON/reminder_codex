@@ -85,8 +85,7 @@ class ReminderBTDriver(Node):
         # === 定时 tick ===
         self._tick_timer = self.create_timer(tick_ms / 1000.0, self._tick)
 
-        # === BT 状态发布（每 2 秒）===
-        self.create_timer(2.0, self._publish_bt_status)
+        # BT status now published on every tick via _tick()
 
         self.get_logger().info(
             f"BT Driver ready (纯话题通信, tick={tick_ms}ms)")
@@ -140,24 +139,34 @@ class ReminderBTDriver(Node):
 
     def _tick(self):
         try:
-            self.bt.tick_once()
+            status = self.bt.tick_once()
+            # Publish BT status on every tick (200ms) for real-time monitoring
+            self._publish_bt_status()
         except Exception as e:
             self.get_logger().error(f"BT error: {e}")
 
     # ────────── BT 状态发布（供监控）──────────
 
     def _publish_bt_status(self):
-        """发布行为和黑板状态到 /robot/bt_status"""
+        """发布行为和黑板状态到 /robot/bt_status（每tick实时更新）"""
+        bb = self.blackboard
         status = {
             "timestamp": time.time(),
-            "pending_count": len(self.blackboard.get("pending_reminders", [])),
-            "current_reminder": self.blackboard.get("current_reminder", {}),
-            "reminder_title": self.blackboard.get("reminder_title", ""),
-            "reminder_status": self.blackboard.get("reminder_status", ""),
-            "tts_text": self.blackboard.get("tts_text", ""),
+            "pending_count": len(bb.get("pending_reminders", [])),
+            "current_reminder": bb.get("current_reminder", {}),
+            "reminder_id": bb.get("reminder_id", ""),
+            "reminder_title": bb.get("reminder_title", ""),
+            "reminder_content": bb.get("reminder_content", ""),
+            "reminder_time": bb.get("reminder_time", ""),
+            "reminder_status": bb.get("reminder_status", ""),
+            "is_repeating": bb.get("is_repeating", False),
+            "repeat_type": bb.get("repeat_type", ""),
+            "tts_text": bb.get("tts_text", ""),
+            "completed_count": bb.get("completed_count", 0),
+            "failed_count": bb.get("failed_count", 0),
             "has_pending": any(
                 r.get("status") in ("pending", "received")
-                for r in self.blackboard.get("pending_reminders", [])
+                for r in bb.get("pending_reminders", [])
             ),
             "node_statuses": self._collect_node_statuses(),
         }

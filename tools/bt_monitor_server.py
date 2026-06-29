@@ -157,6 +157,18 @@ async def status_push():
             for ws in list(connected_ws):
                 try:
                     await ws.send_str(data)
+                    # Also push blackboard data periodically
+                    try:
+                        hdr = struct.pack("<BBL", 2, ord("B"), random.randint(0, 0xFFFFFFFF))
+                        reply = bridge._send_zmq(hdr)
+                        if len(reply) >= 26:
+                            dlen = struct.unpack("<I", reply[22:26])[0]
+                            if dlen > 0:
+                                bb = json.loads(reply[26:26+dlen])
+                                bb_data = json.dumps({"type": "blackboard_data", "blackboard": bb})
+                                await ws.send_str(bb_data)
+                    except:
+                        pass
                 except Exception:
                     connected_ws.discard(ws)
 
