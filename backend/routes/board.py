@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import os, json
 import threading
 import paramiko
@@ -198,6 +198,15 @@ def _board_speak(text):
             print("[BoardSpeak] Error: " + str(e))
             return False
 
+class BoardReminderSync(BaseModel):
+    command_id: str = ""
+    title: str
+    content: str = ""
+    reminder_time: str = ""
+    file_path: str = ""
+    received_at: str = ""
+    status: str = "received"
+    repeat_type: str = ""
 @router.post("/sync")
 async def sync_board_reminder(data: BoardReminderSync):
     records = _load_cache()
@@ -389,5 +398,4 @@ async def play_board_reminder(reminder_id: int):
     except Exception as _fe:
         print(f"[Play] Local fallback error: {_fe}")
     return {"success": False, "message": "Playback failed: " + content_to_play[:20]}
-
 
