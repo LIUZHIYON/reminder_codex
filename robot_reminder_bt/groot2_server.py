@@ -11,6 +11,11 @@ groot2_server — ZMQ Groot2 可视化服务器
 """
 
 import rclpy, os, json, time, struct, random
+
+try:
+    import msgpack
+except ImportError:
+    msgpack = None
 from rclpy.node import Node
 from std_msgs.msg import String
 import threading
@@ -167,7 +172,10 @@ class Groot2Server(Node):
                         if isinstance(v, list): continue
                         simple_bb[k] = v
                     wrapper = {"ReminderBT": simple_bb}
-                    bb_data = json.dumps(wrapper, ensure_ascii=False).encode('utf-8')
+                    if msgpack:
+                        bb_data = msgpack.dumps(wrapper)
+                    else:
+                        bb_data = json.dumps(wrapper, ensure_ascii=False).encode('utf-8')
                     header = struct.pack('<BBL', 2, ord('B'), req_uid)
                     reply_header = header + tree_uuid + struct.pack('<I', len(bb_data))
                     sock.send_multipart([reply_header, bb_data])
