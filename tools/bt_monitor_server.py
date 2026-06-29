@@ -15,6 +15,8 @@ class Bridge:
         self.tree_xml = ""
         self.statuses = {}
         self.last_error = ""
+        self.host = HOST
+        self.port = ZMQ_PORT
     
     def _send_zmq(self, msg):
         ctx = zmq.Context()
@@ -22,7 +24,7 @@ class Bridge:
         s.setsockopt(zmq.LINGER, 0)
         s.setsockopt(zmq.RCVTIMEO, 5000)
         s.setsockopt(zmq.SNDTIMEO, 3000)
-        s.connect(f"tcp://{HOST}:{ZMQ_PORT}")
+        s.connect(f"tcp://{self.host}:{self.port}")
         s.send_multipart([msg, b''])
         reply = s.recv_multipart()
         s.close(linger=0)
@@ -64,87 +66,99 @@ class Bridge:
         return {}
 
 bridge = Bridge()
+connected_ws = set()
 
 async def ws_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    
-    async for msg in ws:
-        if msg.type == web.WSMsgType.TEXT:
-            try:
-                data = json.loads(msg.data)
-                msg_type = data.get('type', '')
-                
-                if msg_type == 'connect':
-                    host = data.get('host', HOST)
-                    port = data.get('port', ZMQ_PORT)
-                    ok = await bridge.connect()
-                    await ws.send_json({
-                        'type': 'connection_status',
-                        'connected': ok,
-                        'tree_xml': bridge.tree_xml if ok else None,
-                        'error': bridge.last_error if not ok else None
-                    })
-                
-                elif msg_type == 'disconnect':
-                    bridge.connected = False
-                    await ws.send_json({'type': 'connection_status', 'connected': False})
-                
-                elif msg_type == 'request_tree':
-                    st = bridge.get_status()
-                    await ws.send_json({
-                        'type': 'tree_data',
-                        'tree_xml': bridge.tree_xml,
-                        'statuses': st
-                    })
-                
-                elif msg_type == 'request_status':
-                    st = bridge.get_status()
-                    await ws.send_json({
-                        'type': 'status_data',
-                        'statuses': st
-                    })
-                
-                elif msg_type == 'request_blackboard':
-                    try:
-                        hdr = struct.pack('<BBL', 2, ord('B'), random.randint(0, 0xFFFFFFFF))
-                        reply = bridge._send_zmq(hdr)
-                        bb = {}
-                        if len(reply) >= 26:
-                            dlen = struct.unpack('<I', reply[22:26])[0]
-                            if dlen > 0:
-                                bb = json.loads(reply[26:26+dlen])
-                        await ws.send_json({
-                            'type': 'blackboard_data',
-                            'blackboard': bb
-                        })
-                    except Exception:
-                        await ws.send_json({
-                            'type': 'blackboard_data',
-                            'blackboard': {}
-                        })
-            
-            except Exception as e:
-                pass
-    
-    return ws
+    connected_ws.add(ws)
 
-async def status_push():
-    """Periodically push status to all connected clients."""
-    while True:
-        await asyncio.sleep(0.5)
-        if bridge.connected:
-            st = bridge.get_status()
+    try:
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT:
+                try:
+                    data = json.loads(msg.data)
+                    msg_type = data.get("type", "")
+
+                    if msg_type == "connect":
+                        bridge.host = data.get("host", HOST)
+                        bridge.port = data.get("port", ZMQ_PORT)
+                        ok = await bridge.connect()
+                        st = bridge.get_status() if ok else {}
+                        await ws.send_json({
+                            "type": "connection_status",
+                            "connected": ok,
+                            "tree_xml": bridge.tree_xml if ok else None,
+                            "statuses": st,
+                            "error": bridge.last_error if not ok else None
+                        })
+
+                    elif msg_type == "disconnect":
+                        bridge.connected = False
+                        await ws.send_json({"type": "connection_status", "connected": False})
+
+                    elif msg_type == "request_tree":
+                        st = bridge.get_status()
+                        await ws.send_json({
+                            "type": "tree_data",
+                            "tree_xml": bridge.tree_xml,
+                            "statuses": st
+                        })
+
+                    elif msg_type == "request_status":
+                        st = bridge.get_status()
+                        await ws.send_json({
+                            "type": "status_data",
+                            "statuses": st
+                        })
+
+                    elif msg_type == "request_blackboard":
+                        try:
+                            hdr = struct.pack("<BBL", 2, ord("B"), random.randint(0, 0xFFFFFFFF))
+                            reply = bridge._send_zmq(hdr)
+                            bb = {}
+                            if len(reply) >= 26:
+                                dlen = struct.unpack("<I", reply[22:26])[0]
+                                if dlen > 0:
+                                    bb = json.loads(reply[26:26+dlen])
+                            await ws.send_json({
+                                "type": "blackboard_data",
+                                "blackboard": bb
+                            })
+                        except Exception:
+                            await ws.send_json({
+                                "type": "blackboard_data",
+                                "blackboard": {}
+                            })
+
+                except Exception as e:
+                    pass
+    finally:
+        connected_ws.discard(ws)
+    return ws
 
 app = web.Application()
 async def index(request):
-    return web.FileResponse(os.path.join(FRONTEND_DIR, 'index.html'))
+    return web.FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 app = web.Application()
-app.router.add_get('/', index)
-app.router.add_static('/assets', os.path.join(FRONTEND_DIR, 'assets'))
-app.router.add_static('/favicon.svg', FRONTEND_DIR)
-app.router.add_get('/ws', ws_handler)
+app.router.add_get("/", index)
+app.router.add_static("/assets", os.path.join(FRONTEND_DIR, "assets"))
+app.router.add_static("/favicon.svg", FRONTEND_DIR)
+app.router.add_get("/ws", ws_handler)
+
+async def status_push():
+    # Periodically push status to all connected clients.
+    while True:
+        await asyncio.sleep(0.5)
+        if bridge.connected and connected_ws:
+            st = bridge.get_status()
+            data = json.dumps({"type": "status_data", "statuses": st})
+            for ws in list(connected_ws):
+                try:
+                    await ws.send_str(data)
+                except Exception:
+                    connected_ws.discard(ws)
 
 async def on_startup(app):
     asyncio.create_task(status_push())
