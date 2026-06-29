@@ -29,15 +29,15 @@ class Bridge:
         reply = s.recv_multipart()
         s.close(linger=0)
         ctx.term()
-        return reply[0] if reply else b''
+        return reply
     
     async def connect(self):
         try:
             hdr = struct.pack('<BBL', 2, ord('T'), random.randint(0, 0xFFFFFFFF))
             reply = self._send_zmq(hdr)
-            if len(reply) >= 26:
-                xlen = struct.unpack('<I', reply[22:26])[0]
-                self.tree_xml = reply[26:26+xlen].decode('utf-8', errors='replace')
+            if reply and len(reply) >= 2 and len(reply[0]) >= 22:
+                xlen = struct.unpack('<I', reply[0][22:26])[0]
+                self.tree_xml = reply[1].decode('utf-8', errors='replace') if len(reply) > 1 else b"".decode()
                 self.connected = True
                 self.last_error = ""
                 return True
@@ -50,11 +50,11 @@ class Bridge:
         try:
             hdr = struct.pack('<BBL', 2, ord('S'), random.randint(0, 0xFFFFFFFF))
             reply = self._send_zmq(hdr)
-            if len(reply) >= 26:
-                dlen = struct.unpack('<I', reply[22:26])[0]
+            if reply and len(reply) >= 2 and len(reply[0]) >= 22:
+                dlen = struct.unpack('<I', reply[0][22:26])[0]
                 st = {}
-                if dlen > 0:
-                    data = reply[26:26+dlen]
+                if dlen > 0 and len(reply) > 1:
+                    data = reply[1]
                     for i in range(0, len(data), 3):
                         if i+2 < len(data):
                             uid = struct.unpack('<H', data[i:i+2])[0]
@@ -161,10 +161,9 @@ async def status_push():
                     try:
                         hdr = struct.pack("<BBL", 2, ord("B"), random.randint(0, 0xFFFFFFFF))
                         reply = bridge._send_zmq(hdr)
-                        if len(reply) >= 26:
-                            dlen = struct.unpack("<I", reply[22:26])[0]
-                            if dlen > 0:
-                                bb = json.loads(reply[26:26+dlen])
+                        if reply and len(reply) >= 2 and len(reply[0]) >= 22:
+                            if len(reply) > 1 and reply[1]:
+                                bb = json.loads(reply[1])
                                 bb_data = json.dumps({"type": "blackboard_data", "blackboard": bb})
                                 await ws.send_str(bb_data)
                     except:
