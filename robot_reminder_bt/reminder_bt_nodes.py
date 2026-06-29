@@ -25,8 +25,10 @@ class CheckNewReminder(ConditionNode):
                 for k in ("command_id", "title", "content", "reminder_time",
                           "is_repeating", "repeat_type"):
                     self.set_output(f"reminder_id" if k=="command_id" else k, r.get(k, ""))
-                return NodeStatus.SUCCESS
-        return NodeStatus.FAILURE
+                self.status = NodeStatus.SUCCESS
+                return self.status
+        self.status = NodeStatus.FAILURE
+        return self.status
 
 
 class CheckTimeCondition(ConditionNode):
@@ -37,14 +39,16 @@ class CheckTimeCondition(ConditionNode):
         if not ts: return NodeStatus.FAILURE
         try:
             dt = datetime.fromisoformat(ts.replace("Z","+00:00").replace("T"," "))
-            return NodeStatus.SUCCESS if datetime.now() >= dt else NodeStatus.FAILURE
+            self.status = NodeStatus.SUCCESS if datetime.now() >= dt else NodeStatus.FAILURE
+            return self.status
         except: return NodeStatus.FAILURE
 
 
 class CheckRepeating(ConditionNode):
     def __init__(self, name="CheckRepeating"): super().__init__(name)
     def execute(self) -> NodeStatus:
-        return NodeStatus.SUCCESS if self.get_input("is_repeating", False) else NodeStatus.FAILURE
+        self.status = NodeStatus.SUCCESS if self.get_input("is_repeating", False) else NodeStatus.FAILURE
+        return self.status
 
 
 class MarkExecuting(ActionNode):
@@ -54,7 +58,8 @@ class MarkExecuting(ActionNode):
         for r in self.get_input("pending_reminders",[]):
             if r.get("command_id")==rid: r["status"]="executing"; r["executing_at"]=datetime.now().isoformat(); break
         self.set_output("reminder_status","executing")
-        return NodeStatus.SUCCESS
+        self.status = NodeStatus.SUCCESS
+        return self.status
 
 
 class BuildTtsText(ActionNode):
@@ -66,7 +71,8 @@ class BuildTtsText(ActionNode):
         if c: txt += f",{c}"
         txt += ",别忘了哦!"
         self.set_output("tts_text", txt)
-        return NodeStatus.SUCCESS
+        self.status = NodeStatus.SUCCESS
+        return self.status
 
 
 class GenerateTTS(AsyncActionNode):
@@ -88,7 +94,8 @@ class GenerateTTS(AsyncActionNode):
             os.unlink(sp); self._ok=(r.returncode==0)
         except Exception as e: print(f"[BT-TTS] {e}"); self._ok=False
     def on_tick(self) -> NodeStatus:
-        return NodeStatus.RUNNING if (self._t and self._t.is_alive()) else (NodeStatus.SUCCESS if self._ok else NodeStatus.FAILURE)
+        self.status = NodeStatus.RUNNING if (self._t and self._t.is_alive()) else (NodeStatus.SUCCESS if self._ok else NodeStatus.FAILURE)
+        return self.status
     def on_halt(self): self._ok=False
 
 
@@ -105,8 +112,11 @@ class RescheduleRepeating(ActionNode):
             nt=(dt+timedelta(days=dm[rt])).isoformat()
             for r in self.get_input("pending_reminders",[]):
                 if r.get("command_id")==rid: r["reminder_time"]=nt; r["status"]="pending"; break
-        except: return NodeStatus.FAILURE
-        return NodeStatus.SUCCESS
+        except:
+            self.status = NodeStatus.FAILURE
+            return self.status
+        self.status = NodeStatus.SUCCESS
+        return self.status
 
 
 class PublishStatus(ActionNode):
@@ -121,4 +131,5 @@ class PublishStatus(ActionNode):
                              "command":"reminder","status":"success" if self.get_input("reminder_status","")=="completed" else "failed",
                              "result":{"played":True}},ensure_ascii=False)
         self._pub.publish(msg)
-        return NodeStatus.SUCCESS
+        self.status = NodeStatus.SUCCESS
+        return self.status

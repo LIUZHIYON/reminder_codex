@@ -80,12 +80,15 @@ class Sequence(TreeNode):
             status = child.execute()
             if status == NodeStatus.FAILURE:
                 self._running_child = 0
-                return NodeStatus.FAILURE
+                self.status = NodeStatus.FAILURE
+                return self.status
             if status == NodeStatus.RUNNING:
-                return NodeStatus.RUNNING
+                self.status = NodeStatus.RUNNING
+                return self.status
             self._running_child += 1
         self._running_child = 0
-        return NodeStatus.SUCCESS
+        self.status = NodeStatus.SUCCESS
+        return self.status
 
     def halt(self):
         self._running_child = 0
@@ -116,20 +119,25 @@ class ReactiveSequence(TreeNode):
                 status = child.execute()
                 if status == NodeStatus.FAILURE:
                     self._running_child = 0
-                    return NodeStatus.FAILURE
+                    self.status = NodeStatus.FAILURE
+                    return self.status
                 if status == NodeStatus.RUNNING:
-                    return NodeStatus.RUNNING
+                    self.status = NodeStatus.RUNNING
+                    return self.status
                 continue
 
             status = child.execute()
             if status == NodeStatus.FAILURE:
                 self._running_child = 0
-                return NodeStatus.FAILURE
+                self.status = NodeStatus.FAILURE
+                return self.status
             if status == NodeStatus.RUNNING:
                 self._running_child = i
-                return NodeStatus.RUNNING
+                self.status = NodeStatus.RUNNING
+                return self.status
         self._running_child = 0
-        return NodeStatus.SUCCESS
+        self.status = NodeStatus.SUCCESS
+        return self.status
 
     def halt(self):
         self._running_child = 0
@@ -158,12 +166,15 @@ class Fallback(TreeNode):
             status = child.execute()
             if status == NodeStatus.SUCCESS:
                 self._running_child = 0
-                return NodeStatus.SUCCESS
+                self.status = NodeStatus.SUCCESS
+                return self.status
             if status == NodeStatus.RUNNING:
-                return NodeStatus.RUNNING
+                self.status = NodeStatus.RUNNING
+                return self.status
             self._running_child += 1
         self._running_child = 0
-        return NodeStatus.FAILURE
+        self.status = NodeStatus.FAILURE
+        return self.status
 
     def halt(self):
         self._running_child = 0
@@ -269,8 +280,10 @@ class ActionNode(LeafNode):
 
     def execute(self) -> NodeStatus:
         if self._fn:
-            return self._fn()
-        return NodeStatus.SUCCESS
+            self.status = self._fn()
+            return self.status
+        self.status = NodeStatus.SUCCESS
+        return self.status
 
 
 class ConditionNode(LeafNode):
@@ -283,8 +296,10 @@ class ConditionNode(LeafNode):
 
     def execute(self) -> NodeStatus:
         if self._fn:
-            return NodeStatus.SUCCESS if self._fn() else NodeStatus.FAILURE
-        return NodeStatus.FAILURE
+            self.status = NodeStatus.SUCCESS if self._fn() else NodeStatus.FAILURE
+            return self.status
+        self.status = NodeStatus.FAILURE
+        return self.status
 
 
 class AsyncActionNode(LeafNode):
@@ -312,10 +327,11 @@ class AsyncActionNode(LeafNode):
     def execute(self) -> NodeStatus:
         if not self._started:
             self._started = True
-            status = self.on_start()
-            if status != NodeStatus.SUCCESS:
-                return status
-        return self.on_tick()
+            self.status = self.on_start()
+            if self.status != NodeStatus.SUCCESS:
+                return self.status
+        self.status = self.on_tick()
+        return self.status
 
     def halt(self):
         self._started = False
