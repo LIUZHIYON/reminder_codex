@@ -1,88 +1,27 @@
-﻿#!/bin/bash
-# ==============================================================
-# deploy.sh — 部署 reminder 系统到 RK3576 板子
-# 板子: RK3576 (ARM64)
-# IP:   192.168.1.64
-# 用户: cat
-# 密码: temppwd
-# ==============================================================
+#!/bin/bash
 set -e
-
 BOARD_IP="192.168.1.64"
 BOARD_USER="cat"
 BOARD_PASS="temppwd"
-REMOTE_DIR="/home/cat/robot_reminder"
-PKG_NAME="robot_reminder"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-echo "=============================="
-echo "Deploy robot_reminder to RK3576"
-echo "Board: ${BOARD_USER}@${BOARD_IP}"
-echo "=============================="
-
-# 1. 检查 SSH 连接
-echo "[1/5] Checking SSH connection..."
-sshpass -p "${BOARD_PASS}" ssh -o StrictHostKeyChecking=no "${BOARD_USER}@${BOARD_IP}" "uname -a" || {
-    echo "ERROR: Cannot connect to board. Please check:"
-    echo "  - Board is powered on"
-    echo "  - IP ${BOARD_IP} is correct"
-    echo "  - Network is reachable"
-    exit 1
-}
-echo "  SSH OK"
-
-# 2. 在板子上创建目录
-echo "[2/5] Creating remote directories..."
-sshpass -p "${BOARD_PASS}" ssh "${BOARD_USER}@${BOARD_IP}" \
-    "mkdir -p ${REMOTE_DIR}/audio ${REMOTE_DIR}/config"
-
-# 3. 复制文件
-echo "[3/5] Copying files..."
-RSYNC_CMD="rsync -avz --progress"
-# 如果有 rsync
-if command -v rsync &> /dev/null; then
-    sshpass -p "${BOARD_PASS}" ${RSYNC_CMD} \
-        --exclude="__pycache__" \
-        --exclude="*.pyc" \
-        --exclude=".git" \
-        "${SCRIPT_DIR}/../${PKG_NAME}/" \
-        "${BOARD_USER}@${BOARD_IP}:${REMOTE_DIR}/"
-else
-    # 用 scp 逐文件复制
-    echo "  rsync not found, using scp..."
-    sshpass -p "${BOARD_PASS}" scp -r \
-        "${SCRIPT_DIR}/../${PKG_NAME}/"* \
-        "${BOARD_USER}@${BOARD_IP}:${REMOTE_DIR}/"
-fi
-echo "  Files copied"
-
-# 4. 安装依赖
-echo "[4/5] Installing Python dependencies..."
-sshpass -p "${BOARD_PASS}" ssh "${BOARD_USER}@${BOARD_IP}" \
-    "cd ${REMOTE_DIR} && pip3 install -r requirements.txt 2>/dev/null; \
-     pip3 install requests websocket-client edge-tts 2>/dev/null; \
-     echo '  Dependencies installed'"
-
-# 5. 测试启动
-echo "[5/5] Testing node startup..."
-sshpass -p "${BOARD_PASS}" ssh "${BOARD_USER}@${BOARD_IP}" \
-    "cd ${REMOTE_DIR} && python3 -c '
-from robot_reminder.reminder_node import ReminderNode
-print(\"Import OK\")
-print(\"Module loaded successfully\")
-' 2>&1 || echo \"  Note: ROS2 not available in test environment\""
-
-echo ""
-echo "=== Deployment complete! ==="
-echo "To run on board:"
-echo "  ssh ${BOARD_USER}@${BOARD_IP}"
-echo "  cd ${REMOTE_DIR}"
-echo "  # With ROS2:"
-echo "  ros2 run robot_reminder reminder_node"
-echo "  # Without ROS2 (standalone test):"
-echo "  python3 -c \"from robot_reminder.reminder_node import main; main()\""
-echo ""
-echo "To test simulation locally:"
-echo "  cd simulation"
-echo "  python device_simulator.py --serial AIPET-${BOARD_IP##*.}"
-
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+echo "=== Deploy all packages ==="
+echo "[1] SSH check..."
+sshpass -p "${BOARD_PASS}" ssh -o StrictHostKeyChecking=no "${BOARD_USER}@${BOARD_IP}" "uname -a" || exit 1
+echo "[2] robot_reminder..."
+REMOTE_DIR="/home/cat/robot_reminder"
+sshpass -p "${BOARD_PASS}" ssh "${BOARD_USER}@${BOARD_IP}" "mkdir -p ${REMOTE_DIR}/audio ${REMOTE_DIR}/config"
+sshpass -p "${BOARD_PASS}" rsync -avz --exclude=__pycache__ --exclude=*.pyc --exclude=.git "${PROJECT_DIR}/robot_reminder/" "${BOARD_USER}@${BOARD_IP}:${REMOTE_DIR}/" 2>/dev/null || sshpass -p "${BOARD_PASS}" scp -r "${PROJECT_DIR}/robot_reminder/"* "${BOARD_USER}@${BOARD_IP}:${REMOTE_DIR}/"
+echo "[3] robot_reminder_bt..."
+REMOTE_BT="/home/cat/ros2_ws/src/robot_reminder_bt"
+sshpass -p "${BOARD_PASS}" ssh "${BOARD_USER}@${BOARD_IP}" "mkdir -p ${REMOTE_BT}/robot_reminder_bt ${REMOTE_BT}/launch"
+sshpass -p "${BOARD_PASS}" rsync -avz --exclude=__pycache__ --exclude=*.pyc --exclude=.git "${PROJECT_DIR}/robot_reminder_bt/" "${BOARD_USER}@${BOARD_IP}:${REMOTE_BT}/" 2>/dev/null || sshpass -p "${BOARD_PASS}" scp -r "${PROJECT_DIR}/robot_reminder_bt/"* "${BOARD_USER}@${BOARD_IP}:${REMOTE_BT}/"
+echo "[4] robot_aipet_relay..."
+REMOTE_RELAY="/home/cat/ros2_ws/src/robot_aipet_relay"
+sshpass -p "${BOARD_PASS}" ssh "${BOARD_USER}@${BOARD_IP}" "mkdir -p ${REMOTE_RELAY}/robot_aipet_relay ${REMOTE_RELAY}/launch ${REMOTE_RELAY}/resource"
+sshpass -p "${BOARD_PASS}" rsync -avz --exclude=__pycache__ --exclude=*.pyc --exclude=.git "${PROJECT_DIR}/robot_aipet_relay/" "${BOARD_USER}@${BOARD_IP}:${REMOTE_RELAY}/" 2>/dev/null || sshpass -p "${BOARD_PASS}" scp -r "${PROJECT_DIR}/robot_aipet_relay/"* "${BOARD_USER}@${BOARD_IP}:${REMOTE_RELAY}/"
+echo "[5] Build..."
+sshpass -p "${BOARD_PASS}" ssh "${BOARD_USER}@${BOARD_IP}" 'source /opt/ros/humble/setup.bash; cd /home/cat/ros2_ws; colcon build --packages-select robot_reminder_bt robot_aipet_relay --symlink-install 2>&1 | tail -5'
+echo "[6] Verify..."
+sshpass -p "${BOARD_PASS}" ssh "${BOARD_USER}@${BOARD_IP}" 'source /opt/ros/humble/setup.bash; source /home/cat/ros2_ws/install/setup.bash; ros2 pkg list | grep -E "robot_reminder_bt|robot_aipet_relay"'
+echo "=== Done ==="

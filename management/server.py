@@ -67,14 +67,7 @@ def self_save_reminders():
         with open(fp,"w",encoding="utf-8") as f: json.dump(_reminders[:50],f,ensure_ascii=False)
     except: pass
 
-def _push_to_board(title, rtime):
-    try:
-        import http.client
-        _body = json.dumps({"content":title,"reminder_time":rtime},ensure_ascii=False).encode("utf-8")
-        _conn = http.client.HTTPConnection("192.168.1.191",5000,timeout=3)
-        _conn.request("POST","/api/reminders/create",_body,{"Content-Type":"application/json"})
-        _conn.getresponse().read(); _conn.close()
-    except: pass
+
 
 def _sync_to_8000(cmd_id, title, rtime, repeat_type=""):
     try:
@@ -123,7 +116,6 @@ def on_msg(msg):
                    "status":"received","received_at":time.strftime("%Y-%m-%dT%H:%M:%S")}
             _reminders.insert(0, rec)
             self_save_reminders()
-            _push_to_board(title, rtime)
             _sync_to_8000(cid, title, rtime, rtype)
             if _ws[0]:
                 _ws[0].send(json.dumps({"type":"command_response","command_id":cid,
@@ -140,7 +132,6 @@ def on_msg(msg):
                "status":"received","received_at":time.strftime("%Y-%m-%dT%H:%M:%S")}
         _reminders.insert(0, rec)
         self_save_reminders()
-        _push_to_board(title, rtime)
         _sync_to_8000(rid, title, rtime, rtype)
         if _ws[0]:
             _ws[0].send(json.dumps({"type":"reminder_response","reminder_id":rid,
@@ -275,6 +266,7 @@ def send(data: dict):
     # Step 2 is removed: Section 22.6 is deprecated.
     # In new protocol, creation (Step 1) auto-sends to device.
     log(f"Created reminder #{reminder_id} (auto-send via new protocol)")
+
     
 
     

@@ -6,7 +6,7 @@ reminder_bt_nodes — 提醒系统行为树节点
 黑板键:
   reminder_id, reminder_title, reminder_content, reminder_time
   reminder_status, is_repeating, repeat_type, tts_text
-  data_dir, pending_reminders, current_reminder
+  pending_reminders, current_reminder
 """
 
 import json, os, time, threading, subprocess, tempfile
@@ -92,22 +92,6 @@ class GenerateTTS(AsyncActionNode):
     def on_halt(self): self._ok=False
 
 
-class SavePersistence(ActionNode):
-    """保存提醒记录到本地 JSON"""
-    def __init__(self, name="SavePersistence"): super().__init__(name)
-    def execute(self) -> NodeStatus:
-        rid=self.get_input("reminder_id",f"r{int(time.time())}")
-        d=self.get_input("data_dir","/data/reminders"); os.makedirs(d,exist_ok=True)
-        rec={"id":rid,"title":self.get_input("reminder_title",""),"content":self.get_input("reminder_content",""),
-             "reminder_time":self.get_input("reminder_time",""),"is_repeating":self.get_input("is_repeating",False),
-             "repeat_type":self.get_input("repeat_type","none"),"status":self.get_input("reminder_status","completed"),
-             "executed_at":datetime.now().isoformat()}
-        p=os.path.join(d,f"{rid}.json")
-        with open(p+".tmp","w",encoding="utf-8") as f: json.dump(rec,f,ensure_ascii=False,indent=2)
-        os.replace(p+".tmp",p)
-        for r in self.get_input("pending_reminders",[]):
-            if r.get("command_id")==rid: r["status"]="completed"; r["completed_at"]=datetime.now().isoformat(); break
-        return NodeStatus.SUCCESS
 
 
 class RescheduleRepeating(ActionNode):

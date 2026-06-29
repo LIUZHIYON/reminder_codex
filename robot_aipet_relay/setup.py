@@ -1,7 +1,7 @@
 ﻿from setuptools import setup
 import os, glob
 
-package_name = "robot_reminder_bt"
+package_name = "robot_aipet_relay"
 
 setup(
     name=package_name,
@@ -16,12 +16,11 @@ setup(
     zip_safe=True,
     maintainer="cat",
     maintainer_email="cat@robot.local",
-    description="提醒系统行为树节点",
+    description="AI Pet 板端 WebSocket 传话节点",
     license="MIT",
     entry_points={
         "console_scripts": [
-            "reminder_bt_driver = robot_reminder_bt.reminder_bt_driver:main",
-            "groot2_server = robot_reminder_bt.groot2_server:main",
+            "relay_node = robot_aipet_relay.relay_node:main",
         ],
     },
 )

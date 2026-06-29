@@ -1,4 +1,4 @@
-"""BT Monitor - 使用 BehaviorTreeMonitor 前端"""
+﻿"""BT Monitor - 浣跨敤 BehaviorTreeMonitor 鍓嶇"""
 import zmq, struct, random, json, asyncio, os, sys
 from aiohttp import web
 
@@ -106,10 +106,23 @@ async def ws_handler(request):
                     })
                 
                 elif msg_type == 'request_blackboard':
-                    await ws.send_json({
-                        'type': 'blackboard_data',
-                        'blackboard': {}
-                    })
+                    try:
+                        hdr = struct.pack('<BBL', 2, ord('B'), random.randint(0, 0xFFFFFFFF))
+                        reply = bridge._send_zmq(hdr)
+                        bb = {}
+                        if len(reply) >= 26:
+                            dlen = struct.unpack('<I', reply[22:26])[0]
+                            if dlen > 0:
+                                bb = json.loads(reply[26:26+dlen])
+                        await ws.send_json({
+                            'type': 'blackboard_data',
+                            'blackboard': bb
+                        })
+                    except Exception:
+                        await ws.send_json({
+                            'type': 'blackboard_data',
+                            'blackboard': {}
+                        })
             
             except Exception as e:
                 pass
@@ -146,3 +159,4 @@ if __name__ == '__main__':
     print(f"[BT Monitor] http://localhost:{HTTP_PORT}")
     print(f"[BT Monitor] Frontend: {FRONTEND_DIR}")
     web.run_app(app, host='0.0.0.0', port=HTTP_PORT)
+
