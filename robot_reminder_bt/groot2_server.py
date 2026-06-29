@@ -156,20 +156,17 @@ class Groot2Server(Node):
                     reply_header = header + tree_uuid + struct.pack('<I', len(status_data))
                     sock.send_multipart([reply_header, status_data])
 
-                elif req_type == 'B':  # BLACKBOARD - Groot2 format: {subtree: {key: {repr,type}}}
+                elif req_type == 'B':  # BLACKBOARD - Groot2 format: {subtree: {key: raw_value}}
                     raw_bb = self._bt_status
-                    formatted_bb = {}
+                    # Remove large objects, keep only scalar and simple values
+                    simple_bb = {}
                     for k, v in raw_bb.items():
-                        if k == "node_statuses" or k == "tree_structure" or k == "current_reminder":
+                        if k in ("node_statuses", "tree_structure", "current_reminder"):
                             continue
-                        if isinstance(v, bool): bb_type = "bool"; bb_repr = "true" if v else "false"
-                        elif isinstance(v, (int, float)): bb_type = "number"; bb_repr = str(v)
-                        elif isinstance(v, dict): bb_type = "object"; bb_repr = str(v)[:50]
-                        elif isinstance(v, list): bb_type = "array"; bb_repr = str(len(v)) + " items"
-                        elif v is None or v == "": bb_type = "string"; bb_repr = "(empty)"
-                        else: bb_type = "string"; bb_repr = str(v)[:80]
-                        formatted_bb[k] = {"repr": bb_repr, "type": bb_type}
-                    wrapper = {"ReminderBT": formatted_bb}
+                        if isinstance(v, dict): continue
+                        if isinstance(v, list): continue
+                        simple_bb[k] = v
+                    wrapper = {"ReminderBT": simple_bb}
                     bb_data = json.dumps(wrapper, ensure_ascii=False).encode('utf-8')
                     header = struct.pack('<BBL', 2, ord('B'), req_uid)
                     reply_header = header + tree_uuid + struct.pack('<I', len(bb_data))
