@@ -289,12 +289,35 @@ class ReminderBTDriver(Node):
                "status": "received", "received_at": datetime.now().isoformat()}
         self.blackboard["pending_reminders"].insert(0, rec)
         self._save_reminders()
-        self.get_logger().info(f"Reminder: {title[:20]} @ {rtime}")
+        self.get_logger().info(f"[RECV] Reminder: {title[:20]} @ {rtime} cid={cid} pending_count={len(self.blackboard['pending_reminders'])}")
 
     def _tick(self):
         try:
-            self.bt.tick_once()
+            status = self.bt.tick_once()
+            # Log every 50 ticks or when status changes
+            if not hasattr(self, '_tick_count'):
+                self._tick_count = 0
+                self._last_status = None
+            self._tick_count += 1
+            if self._tick_count % 50 == 0 or status != self._last_status:
+                bb = self.blackboard
+                rems = bb.get("pending_reminders", [])
+                n_pending = sum(1 for r in rems if r.get("status") in ("pending","received","executing"))
+                self.get_logger().info(
+                    "[TICK#%d] status=%s pending=%d completed=%d failed=%d title=%s rem_status=%s" % (
+                        self._tick_count,
+                        status.name if hasattr(status,'name') else str(status),
+                        n_pending,
+                        bb.get("completed_count",0),
+                        bb.get("failed_count",0),
+                        bb.get("reminder_title","")[:15] if bb.get("reminder_title") else "-",
+                        bb.get("reminder_status","")[:10] if bb.get("reminder_status") else "-"
+                    ))
+                self._last_status = status
         except Exception as e:
+            import traceback
+            with open("/tmp/bt_error.log","a") as f:
+                traceback.print_exc(file=f)
             self.get_logger().error(f"BT error: {e}")
 
     def _build_tree(self, pub_node):
