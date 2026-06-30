@@ -24,7 +24,13 @@ class CheckNewReminder(ConditionNode):
                 self.set_output("current_reminder", r)
                 for k in ("command_id", "title", "content", "reminder_time",
                           "is_repeating", "repeat_type"):
-                    self.set_output(f"reminder_id" if k=="command_id" else k, r.get(k, ""))
+                    if k == "command_id":
+                        key = "reminder_id"
+                    elif k.startswith("reminder_"):
+                        key = k
+                    else:
+                        key = f"reminder_{k}"
+                    self.set_output(key, r.get(k, ""))
                 self.status = NodeStatus.SUCCESS
                 return self.status
         self.status = NodeStatus.FAILURE
