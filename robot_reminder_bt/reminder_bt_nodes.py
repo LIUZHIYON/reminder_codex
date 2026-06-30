@@ -88,26 +88,36 @@ class GenerateTTS(AsyncActionNode):
         return NodeStatus.RUNNING
 
     def _run_tts(self, text):
-        import subprocess, tempfile, os
-        safe_text = text.replace(""", "'")
-        scr = f"""#!/bin/bash
-source /opt/ros/humble/setup.bash
-ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak "{{text: {safe_text}}}" 2>&1
-"""
-        fp = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False, encoding="utf-8")
-        fp.write(scr); fp.close()
-        os.chmod(fp.name, 0o755)
+        import rclpy
         try:
+            safe_text = text.replace('"', "'")
+            rclpy.init(args=None)
+            from rclpy.action import ActionClient
+            from rclpy.node import Node
+            n = Node("_gen_tts")
+            client = ActionClient(n, type_mapping={})
+            import time as t
+            t.sleep(0.3)
+            # Use subprocess for voice_bridge since it's a system package
+            import subprocess, tempfile, os
+            scr = f"""#!/bin/bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash 2>/dev/null
+timeout 30 ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak \"{{text: {safe_text}}}\" 2>/dev/null
+"""
+            fp = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False, encoding="utf-8")
+            fp.write(scr); fp.close()
+            os.chmod(fp.name, 0o755)
             r = subprocess.run(["timeout", "35", fp.name], capture_output=True, text=True, timeout=40)
+            os.unlink(fp.name)
             self._ok = (r.returncode == 0)
-            if not self._ok:
-                print(f"[GenerateTTS] FAILED: rc={r.returncode}")
-            else:
-                print("[GenerateTTS] SUCCESS")
+            if r.stderr and not self._ok:
+                self.get_logger().error(f"TTS failed: {r.stderr[:100]}")
         except Exception as e:
-            print(f"[GenerateTTS] exception: {e}")
+            self.get_logger().error(f"TTS exception: {e}")
             self._ok = False
-        os.unlink(fp.name)
+        n.destroy_node()
+
     def on_tick(self) -> NodeStatus:
         if self._t is None:
             self.status = NodeStatus.FAILURE; return self.status
