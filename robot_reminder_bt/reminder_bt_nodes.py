@@ -88,29 +88,41 @@ class GenerateTTS(AsyncActionNode):
         return NodeStatus.RUNNING
 
     def _run_tts(self, text):
-        import subprocess, tempfile, os
+        import subprocess, tempfile, os, datetime, traceback
+        log = open("/tmp/tts_debug.log", "a")
+        log.write("\n[{}] _run_tts START: {}\n".format(datetime.datetime.now(), text))
+        log.flush()
+        fp = None
         try:
-            safe_text = text.replace('"', "'")
-            scr = f"""#!/bin/bash
-source /opt/ros/humble/setup.bash
-ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak "{{text: {safe_text}}}" 2>&1
-"""
+            safe_text = text.replace(chr(34), chr(39))
+            lines = ["#!/bin/bash", "source /opt/ros/humble/setup.bash"]
+            cmd = 'ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak'
+            yaml_val = "'{text: \"%s\"}'" % safe_text
+            lines.append("{} {}".format(cmd, yaml_val))
+            scr = "\n".join(lines)
             fp = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False, encoding="utf-8")
-            fp.write(scr); fp.close()
+            fp.write(scr)
+            fp.close()
             os.chmod(fp.name, 0o755)
+            log.write("[{}] Script: {}\n".format(datetime.datetime.now(), fp.name))
+            log.write("[{}] Content: {}\n".format(datetime.datetime.now(), scr))
+            log.flush()
             r = subprocess.run(["timeout", "35", fp.name], capture_output=True, text=True, timeout=40)
             self._ok = (r.returncode == 0)
-            if not self._ok:
-                print(f"[GenerateTTS] FAILED rc={r.returncode}")
-            else:
-                print("[GenerateTTS] SUCCESS")
+            log.write("[{}] RC={} stdout={}\n".format(datetime.datetime.now(), r.returncode, r.stdout[:150]))
+            log.flush()
         except Exception as e:
-            print(f"[GenerateTTS] exception: {e}")
+            traceback.print_exc(file=log)
+            log.write("[{}] EXCEPTION: {}\n".format(datetime.datetime.now(), e))
+            log.flush()
             self._ok = False
         finally:
-            if 'fp' in dir():
+            if fp is not None:
                 try: os.unlink(fp.name)
                 except: pass
+            log.write("[{}] _run_tts END\n".format(datetime.datetime.now()))
+            log.flush()
+            log.close()
 
     def on_tick(self) -> NodeStatus:
         if self._t is None:
