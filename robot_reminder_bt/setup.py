@@ -22,6 +22,7 @@ setup(
         "console_scripts": [
             "reminder_bt_driver = robot_reminder_bt.reminder_bt_driver:main",
             "aipet_reminder_node = robot_reminder_bt.aipet_reminder_node:main",
+            "reminder_ws_daemon = robot_reminder_bt.reminder_ws_daemon:main",
             "groot2_server = robot_reminder_bt.groot2_server:main",
         ],
     },

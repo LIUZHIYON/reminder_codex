@@ -1,25 +1,22 @@
-﻿"""reminder_standalone.launch.py — 独立提醒启动（不依赖同事 relay_node）"""
+﻿"""reminder_standalone.launch.py — 独立提醒启动（完全独立，不依赖同事节点）"""
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess, TimerAction
 
 
 def generate_launch_description():
     return LaunchDescription([
-        # 1. 检查并启动 ws_daemon_bridge
-        ExecuteProcess(
-            cmd=["python3", "-c",
-                 "import rclpy,time;rclpy.init();n=rclpy.create_node('ck');time.sleep(2);"
-                 "has=any('ws_daemon_bridge' in x for x in n.get_node_names());"
-                 "if not has:"
-                 " import subprocess;subprocess.Popen(['bash','-c',"
-                 "'source /opt/ros/humble/setup.bash;source /home/cat/talk_with/ros_ws/install/setup.bash;"
-                 "python3 /home/cat/talk_with/ros_ws/install/robot_aipet_relay/lib/python3.10/"
-                 "site-packages/robot_aipet_relay/ws_daemon.py >/dev/null 2>&1 &']);"
-                 " print('ws_daemon: started')"
-                 "else: print('ws_daemon: already running');n.destroy_node();rclpy.shutdown()"],
-            name="check_ws_daemon",
-            shell=False,
+        # 1. 独立 WebSocket 守护（连接远程服务器）
+        Node(
+            package="robot_reminder_bt",
+            executable="reminder_ws_daemon",
+            name="reminder_ws_daemon",
+            output="screen",
+            parameters=[{
+                "server_host": "47.118.26.156",
+                "server_port": 8000,
+                "serial_number": "6976f96f-bc80-56e3-9b27-13d12cdde9d1",
+                "heartbeat_interval": 30.0,
+            }],
         ),
 
         # 2. 提醒桥接
