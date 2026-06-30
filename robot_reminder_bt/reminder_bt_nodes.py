@@ -20,7 +20,7 @@ class CheckNewReminder(ConditionNode):
     def execute(self) -> NodeStatus:
         rems = self.get_input("pending_reminders", [])
         for r in rems:
-            if r.get("status") in ("pending", "received"):
+            if r.get("status") in ("pending", "received", "executing"):
                 self.set_output("current_reminder", r)
                 for k in ("command_id", "title", "content", "reminder_time",
                           "is_repeating", "repeat_type"):
