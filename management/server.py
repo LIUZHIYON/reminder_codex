@@ -309,13 +309,8 @@ def send(data: dict):
         except:
             _s.close()
     except: pass
-    desired_status = "sent" if board_online_via_post else "pending"
-    try:
-        rq.put(f"{API}/aipet/app/reminders/{reminder_id}",
-               headers={"Authorization":f"Bearer {_utoken[0]}","Content-Type":"application/json"},
-               json={"status":desired_status, "sentTime": time.strftime("%Y-%m-%dT%H:%M:%S")}, timeout=5)
-        log(f"Status #{reminder_id} -> {desired_status} (board_online={board_online_via_post})")
-    except: pass
+    # Status now updated by board BT result (via WS -> server)
+    log(f"Reminder #{reminder_id} sent, waiting for board BT result")
     
     return JSONResponse({"success":True,"reminder_id":reminder_id})
 
