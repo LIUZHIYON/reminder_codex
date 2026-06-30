@@ -62,7 +62,7 @@ class AIPetReminderNode(Node):
     # ── 下行：ws_daemon → BT driver ──
 
     def _on_ws_delivery(self, msg: String):
-        """接收 ws_daemon_bridge 下发的 relay_message_delivery"""
+        """接收 ws_daemon 下发的消息"""
         try:
             data = json.loads(msg.data)
         except json.JSONDecodeError:
@@ -72,6 +72,11 @@ class AIPetReminderNode(Node):
         if msg_type == "reminder_delivery":
             self._handle_reminder(data)
         elif msg_type == "relay_message_delivery":
+            rid = data.get("relay_id", "")
+            # Skip old relay messages from previous sessions
+            if rid.startswith("rly_"):
+                self.get_logger().debug(f"Skip old relay: {rid}")
+                return
             self._handle_relay(data)
         else:
             self.get_logger().debug(f"未处理的ws消息: {msg_type}")
