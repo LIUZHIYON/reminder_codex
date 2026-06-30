@@ -5,8 +5,8 @@ reminder_ws_daemon — 独立 WebSocket 守护进程
 按 AI-Pet-WebSocket 协议文档实现:
 - 连接: ws://47.118.26.156:8000/api/v1/aipet/ws/{serial}
 - 认证: GET /api/v1/aipet/ws/auth/{serial} → token
-- 下行: §4.2 reminder_delivery → /aipet/ws/relay_delivery
-- 上行: §3.7 reminder_response ← /aipet/ws/relay_result
+- 下行: §4.2 reminder_delivery → /reminder/ws/delivery
+- 上行: §3.7 reminder_response ← /reminder/ws/result
 
 不依赖同事 ws_daemon_bridge。
 """
@@ -42,11 +42,11 @@ class ReminderWSDaemon(Node):
         self._hb = self.get_parameter("heartbeat_interval").value
 
         # 下行: WS → ROS2
-        self._relay_pub = self.create_publisher(String, "/aipet/ws/relay_delivery", 10)
-        self._cmd_pub = self.create_publisher(String, "/aipet/ws/command_delivery", 10)
+        self._relay_pub = self.create_publisher(String, "/reminder/ws/delivery", 10)
+        self._cmd_pub = self.create_publisher(String, "/reminder/ws/command", 10)
 
         # 上行: ROS2 → WS
-        self.create_subscription(String, "/aipet/ws/relay_result", self._on_ws_result, 10)
+        self.create_subscription(String, "/reminder/ws/result", self._on_ws_result, 10)
 
         # WebSocket
         self._ws = None

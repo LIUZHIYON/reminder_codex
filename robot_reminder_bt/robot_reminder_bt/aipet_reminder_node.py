@@ -41,9 +41,9 @@ class AIPetReminderNode(Node):
 
         # === 订阅 ws_daemon_bridge 下发的消息 ===
         self.create_subscription(
-            String, "/aipet/ws/relay_delivery", self._on_ws_delivery, qos)
+            String, "/reminder/ws/delivery", self._on_ws_delivery, qos)
         self.create_subscription(
-            String, "/aipet/ws/command_delivery", self._on_ws_command, qos)
+            String, "/reminder/ws/command", self._on_ws_command, qos)
 
         # === 订阅 BT driver 的执行结果 ===
         self.create_subscription(
@@ -55,7 +55,7 @@ class AIPetReminderNode(Node):
 
         # === 发布回 ws_daemon_bridge ===
         self._result_pub = self.create_publisher(
-            String, "/aipet/ws/relay_result", qos)
+            String, "/reminder/ws/result", qos)
 
         self.get_logger().info("aipet_reminder_node 已启动")
 
