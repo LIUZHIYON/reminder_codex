@@ -271,7 +271,7 @@ def send(data: dict):
         import paramiko
         _cli = paramiko.SSHClient()
         _cli.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        _cli.connect("192.168.1.191", username="cat", password="temppwd", timeout=5)
+        _cli.connect("192.168.1.209", username="cat", password="temppwd", timeout=5)
         _sftp = _cli.open_sftp()
         _payload = json.dumps({"command":"reminder","command_id":str(reminder_id),
             "params":{"reminder_data":{"title":title,"content":content,"reminder_time":rtime,"repeat_type":repeat_type}}})
@@ -303,7 +303,7 @@ def send(data: dict):
         _s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _s.settimeout(3)
         try:
-            _s.connect(("192.168.1.191", 5000))
+            _s.connect(("192.168.1.209", 5000))
             _s.close()
             board_online_via_post = True
         except:
@@ -459,7 +459,7 @@ def board_status():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(3)
         try:
-            s.connect(("192.168.1.191", 5000))
+            s.connect(("192.168.1.209", 5000))
             s.close()
             return JSONResponse({"online": True, "method": "direct_flask"})
         except:

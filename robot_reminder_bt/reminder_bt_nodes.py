@@ -38,7 +38,7 @@ class CheckTimeCondition(ConditionNode):
         ts = self.get_input("reminder_time", "")
         if not ts: return NodeStatus.FAILURE
         try:
-            dt = datetime.fromisoformat(ts.replace("Z","+00:00").replace("T"," "))
+            dt = datetime.fromisoformat(ts.replace("Z","+00:00"))
             self.status = NodeStatus.SUCCESS if datetime.now() >= dt else NodeStatus.FAILURE
             return self.status
         except: return NodeStatus.FAILURE
@@ -108,7 +108,7 @@ class RescheduleRepeating(ActionNode):
         dm={"daily":1,"weekly":7,"monthly":30}
         if rt not in dm: return NodeStatus.SUCCESS
         try:
-            dt=datetime.fromisoformat(self.get_input("reminder_time","").replace("Z","+00:00").replace("T"," "))
+            dt=datetime.fromisoformat(self.get_input("reminder_time","").replace("Z","+00:00"))
             nt=(dt+timedelta(days=dm[rt])).isoformat()
             for r in self.get_input("pending_reminders",[]):
                 if r.get("command_id")==rid: r["reminder_time"]=nt; r["status"]="pending"; break
