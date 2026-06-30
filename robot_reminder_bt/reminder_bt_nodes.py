@@ -112,9 +112,9 @@ timeout 30 ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak \"
             os.unlink(fp.name)
             self._ok = (r.returncode == 0)
             if r.stderr and not self._ok:
-                self.get_logger().error(f"TTS failed: {r.stderr[:100]}")
+                print(f"[GenerateTTS] TTS failed: {r.stderr[:100]}")
         except Exception as e:
-            self.get_logger().error(f"TTS exception: {e}")
+            print(f"[GenerateTTS] exception: {e}")
             self._ok = False
         n.destroy_node()
 
