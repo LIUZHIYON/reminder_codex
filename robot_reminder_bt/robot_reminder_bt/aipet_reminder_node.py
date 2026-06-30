@@ -148,7 +148,8 @@ class AIPetReminderNode(Node):
 
         # 根据原始消息类型决定回传格式
         payload = {
-            "type": "relay_message_response" if response_type == "relay" else "command_response",
+            "type": "reminder_response",
+            "reminder_id": cmd_id,
             "command_id": cmd_id,
             "command": cmd,
             "status": status,

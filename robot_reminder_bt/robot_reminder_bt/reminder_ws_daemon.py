@@ -2,19 +2,18 @@
 """
 reminder_ws_daemon — 独立 WebSocket 守护进程
 
-连接远程服务器，接收提醒消息，发布到 ROS2 话题。
-独立于同事的 ws_daemon_bridge，不重名，不共用。
+按 AI-Pet-WebSocket 协议文档实现:
+- 连接: ws://47.118.26.156:8000/api/v1/aipet/ws/{serial}
+- 认证: GET /api/v1/aipet/ws/auth/{serial} → token
+- 下行: §4.2 reminder_delivery → /aipet/ws/relay_delivery
+- 上行: §3.7 reminder_response ← /aipet/ws/relay_result
 
-云端 ⇋ reminder_ws_daemon (WebSocket)
-          │ /aipet/ws/relay_delivery → aipet_reminder_node
-          │ /aipet/ws/command_delivery → aipet_reminder_node
-          │ /aipet/ws/relay_result ← aipet_reminder_node
+不依赖同事 ws_daemon_bridge。
 """
 
 import rclpy, json, time, threading
 from rclpy.node import Node
 from std_msgs.msg import String
-from datetime import datetime
 
 try:
     import websocket
@@ -28,7 +27,6 @@ except ImportError:
 
 
 class ReminderWSDaemon(Node):
-    """独立 WebSocket 守护，连接远程服务器"""
 
     def __init__(self):
         super().__init__("reminder_ws_daemon")
@@ -38,35 +36,33 @@ class ReminderWSDaemon(Node):
         self.declare_parameter("serial_number", "6976f96f-bc80-56e3-9b27-13d12cdde9d1")
         self.declare_parameter("heartbeat_interval", 30.0)
 
-        self.server_host = self.get_parameter("server_host").value
-        self.server_port = self.get_parameter("server_port").value
-        self.serial = self.get_parameter("serial_number").value
-        self.hb_interval = self.get_parameter("heartbeat_interval").value
+        self._host = self.get_parameter("server_host").value
+        self._port = self.get_parameter("server_port").value
+        self._serial = self.get_parameter("serial_number").value
+        self._hb = self.get_parameter("heartbeat_interval").value
 
-        # 发布器：ws → ROS2 话题
+        # 下行: WS → ROS2
         self._relay_pub = self.create_publisher(String, "/aipet/ws/relay_delivery", 10)
         self._cmd_pub = self.create_publisher(String, "/aipet/ws/command_delivery", 10)
-        self._config_pub = self.create_publisher(String, "/aipet/ws/config_response", 10)
 
-        # 订阅器：ROS2 话题 → ws（回传结果）
+        # 上行: ROS2 → WS
         self.create_subscription(String, "/aipet/ws/relay_result", self._on_ws_result, 10)
-        self.create_subscription(String, "/aipet/ws/voice_trigger", self._on_voice_trigger, 10)
 
-        # WebSocket 连接
+        # WebSocket
         self._ws = None
         self._connected = False
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._ws_loop, daemon=True)
         self._thread.start()
 
-        # 心跳
-        self._hb_timer = self.create_timer(self.hb_interval, self._send_heartbeat)
+        self._hb_timer = self.create_timer(self._hb, self._send_heartbeat)
 
-        self.get_logger().info(f"reminder_ws_daemon 已启动 ({self.server_host}:{self.server_port})")
+        self.get_logger().info(f"reminder_ws_daemon 已启动 {self._host}:{self._port}")
+
+    # ── WebSocket 连接 ──
 
     def _fetch_token(self):
-        url = (f"http://{self.server_host}:{self.server_port}"
-               f"/api/v1/aipet/ws/auth/{self.serial}")
+        url = f"http://{self._host}:{self._port}/api/v1/aipet/ws/auth/{self._serial}"
         try:
             req = urllib.request.urlopen(url, timeout=10)
             data = json.loads(req.read())
@@ -79,38 +75,30 @@ class ReminderWSDaemon(Node):
         if websocket is None:
             self.get_logger().error("websocket-client 未安装")
             return
-
         while not self._stop.is_set():
             token = self._fetch_token()
             if not token:
                 time.sleep(10)
                 continue
-
-            url = (f"ws://{self.server_host}:{self.server_port}"
-                   f"/api/v1/aipet/ws/{self.serial}")
-            self.get_logger().info(f"连接 WS: {url[:60]}...")
-
+            url = f"ws://{self._host}:{self._port}/api/v1/aipet/ws/{self._serial}"
+            self.get_logger().info(f"连接 WS...")
             try:
                 self._ws = websocket.WebSocketApp(
                     url,
-                    on_open=lambda ws: self._on_open(ws, token),
-                    on_message=lambda ws, msg: self._on_message(msg),
-                    on_error=lambda ws, err: self.get_logger().error(f"WS错误: {err}"),
-                    on_close=lambda ws, code, msg: self.get_logger().info(f"WS关闭: {code}"),
+                    on_open=lambda ws: ws.send(json.dumps({"type": "auth", "access_token": token})),
+                    on_message=lambda ws, msg: self._on_ws_msg(msg),
+                    on_error=lambda ws, err: None,
+                    on_close=lambda ws, code, msg: None,
                 )
                 self._ws.run_forever(ping_interval=25, ping_timeout=10)
-            except Exception as e:
-                self.get_logger().error(f"WS异常: {e}")
-
+            except Exception:
+                pass
             if not self._stop.is_set():
-                self.get_logger().info("5秒后重连...")
                 time.sleep(5)
 
-    def _on_open(self, ws, token):
-        self.get_logger().info("WS已连接，发送认证...")
-        ws.send(json.dumps({"type": "auth", "access_token": token}))
+    # ── 下行: WS消息 → ROS2话题 ──
 
-    def _on_message(self, message):
+    def _on_ws_msg(self, message):
         try:
             data = json.loads(message)
         except json.JSONDecodeError:
@@ -122,59 +110,77 @@ class ReminderWSDaemon(Node):
             if data.get("success"):
                 self._connected = True
                 self.get_logger().info("认证成功")
-                # 请求配置
-                if self._ws:
-                    self._ws.send(json.dumps({"type": "config_request"}))
-            else:
-                self.get_logger().error("认证失败")
 
+        # §4.2 reminder_delivery — 待办事提醒下发
         elif msg_type == "reminder_delivery":
-            msg = String()
-            msg.data = message
-            self._relay_pub.publish(msg)
-            self.get_logger().info(f"收到提醒: {data.get('reminder_data',{}).get('title','')[:20]}")
+            rid = data.get("reminder_id", "")
+            rd = data.get("reminder_data", {})
+            self.get_logger().info(f"提醒下发: {rd.get('title','')[:20]} @ {rd.get('reminder_time','')}")
 
+            msg = String()
+            msg.data = message  # 原样转发
+            self._relay_pub.publish(msg)
+
+            # 回复 ACK
+            self._send_ack("reminder_delivery", data)
+
+        # §4.1 server_command
         elif msg_type == "server_command":
+            cmd = data.get("command", "")
+            self.get_logger().info(f"指令: {cmd}")
             msg = String()
             msg.data = message
             self._cmd_pub.publish(msg)
-            self.get_logger().info(f"收到指令: {data.get('command','')}")
 
+        # §4.3 relay_message_delivery — 传话
         elif msg_type == "relay_message_delivery":
+            self.get_logger().info(f"传话: {data.get('content','')[:30]}")
             msg = String()
             msg.data = message
             self._relay_pub.publish(msg)
-            self.get_logger().info(f"收到传话")
 
-        elif msg_type == "config_request" and data.get("success"):
-            config = data.get("data", {})
-            msg = String()
-            msg.data = json.dumps(config, ensure_ascii=False)
-            self._config_pub.publish(msg)
-            self.get_logger().info(f"收到配置: {config.get('pet_nickname','')}")
+    # ── 上行: ROS2话题 → WS消息 → 服务器 ──
 
-        elif msg_type == "chat":
-            self.get_logger().info(f"收到聊天: {data.get('content','')[:30]}")
+    def _on_ws_result(self, msg: String):
+        """接收提醒执行结果，按 §3.7 格式发回服务器"""
+        if not self._connected or not self._ws:
+            return
+        try:
+            data = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+
+        # 构建 §3.7 reminder_response
+        response = {
+            "type": "reminder_response",
+            "reminder_id": data.get("reminder_id", ""),
+            "status": data.get("status", "completed"),
+            "result": data.get("result", {"played": True}),
+        }
+        error = data.get("error", "")
+        if error:
+            response["error"] = error
+
+        try:
+            self._ws.send(json.dumps(response, ensure_ascii=False))
+            self.get_logger().info(f"结果已回传: {response['reminder_id']} = {response['status']}")
+        except Exception:
+            pass
+
+    def _send_ack(self, msg_type, data):
+        if self._connected and self._ws:
+            try:
+                ack = {"type": "ack", "message": msg_type,
+                       "message_id": data.get("reminder_id") or data.get("message_id", ""),
+                       "timestamp": time.time()}
+                self._ws.send(json.dumps(ack))
+            except Exception:
+                pass
 
     def _send_heartbeat(self):
         if self._connected and self._ws:
             try:
                 self._ws.send(json.dumps({"type": "heartbeat"}))
-            except Exception:
-                pass
-
-    def _on_ws_result(self, msg: String):
-        """转发 aipet_reminder_node 的执行结果到云端"""
-        if self._connected and self._ws:
-            try:
-                self._ws.send(msg.data)
-            except Exception:
-                pass
-
-    def _on_voice_trigger(self, msg: String):
-        if self._connected and self._ws:
-            try:
-                self._ws.send(msg.data)
             except Exception:
                 pass
 
