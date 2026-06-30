@@ -83,6 +83,8 @@ class GenerateTTS(AsyncActionNode):
     def on_start(self) -> NodeStatus:
         text = self.get_input("tts_text", "reminder")
         self._ok = False
+        with open("/tmp/tts_debug.log", "a") as f:
+            f.write("[on_start] tts_text={}\n".format(text))
         self._t = threading.Thread(target=self._run_tts, args=(text,), daemon=True)
         self._t.start()
         return NodeStatus.RUNNING
