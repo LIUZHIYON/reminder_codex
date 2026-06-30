@@ -104,8 +104,8 @@ class GenerateTTS(AsyncActionNode):
         try:
             safe_text = text.replace(chr(34), chr(39))
             lines = ["#!/bin/bash", "source /opt/ros/humble/setup.bash"]
-            cmd = 'ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak'
-            yaml_val = "'{text: \"%s\"}'" % safe_text
+            cmd = 'ros2 service call /audio/set_volume robot_audio_node/srv/SetVolume \'{volume: 80}\' 2>/dev/null; ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak'
+            yaml_val = chr(34) + "{text: " + chr(39) + safe_text + chr(39) + "}" + chr(34)
             lines.append("{} {}".format(cmd, yaml_val))
             scr = "\n".join(lines)
             fp = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False, encoding="utf-8")
@@ -115,7 +115,7 @@ class GenerateTTS(AsyncActionNode):
             log.write("[{}] Script: {}\n".format(datetime.datetime.now(), fp.name))
             log.write("[{}] Content: {}\n".format(datetime.datetime.now(), scr))
             log.flush()
-            r = subprocess.run(["timeout", "35", fp.name], capture_output=True, text=True, timeout=40)
+            r = subprocess.run(["bash", fp.name], capture_output=True, text=True, timeout=45)
             self._ok = (r.returncode == 0 or "Goal accepted" in r.stdout)
             log.write("[{}] RC={} stdout={}\n".format(datetime.datetime.now(), r.returncode, r.stdout[:150]))
             log.flush()

@@ -1,53 +1,58 @@
 #!/usr/bin/env python3
-"""Standalone voice/speak caller - 独立进程，不污染ROS2上下文"""
-import sys, os
+"""Standalone voice/speak caller - clean rclpy lifecycle"""
+import sys
 
-def speak(text: str) -> bool:
+def main():
+    text = sys.argv[1] if len(sys.argv) > 1 else "reminder"
+    
     import rclpy
     from rclpy.node import Node
     from rclpy.action import ActionClient
     from robot_voice_bridge.action import Speak
     
-    # 完全独立的 rclpy 上下文
-    rclpy.init(args=["_call_voice"])
-    node = Node("_call_voice_node")
+    # Force fresh context
+    import os
+    if "RCLPY_OK" in os.environ:
+        del os.environ["RCLPY_OK"]
     
+    try:
+        rclpy.init(args=["_call_voice_sub"])
+    except:
+        pass  # already initialized
+    
+    node = Node("_call_voice")
     client = ActionClient(node, Speak, "/voice/speak")
-    if not client.wait_for_server(timeout_sec=3.0):
+    
+    if not client.wait_for_server(timeout_sec=5.0):
         print("NO_SERVER", flush=True)
         node.destroy_node()
-        rclpy.shutdown()
-        return False
+        return 1
     
     goal = Speak.Goal()
     goal.text = text
     goal.audio_path = ""
     
-    send_future = client.send_goal_async(goal)
-    rclpy.spin_until_future_complete(node, send_future, timeout_sec=5.0)
-    goal_handle = send_future.result()
+    future = client.send_goal_async(goal)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
+    gh = future.result()
     
-    if goal_handle is None:
+    if gh is None:
         print("REJECTED", flush=True)
         node.destroy_node()
-        rclpy.shutdown()
-        return False
+        return 1
     
-    result_future = goal_handle.get_result_async()
+    result_future = gh.get_result_async()
     rclpy.spin_until_future_complete(node, result_future, timeout_sec=60.0)
     result = result_future.result()
     
-    ok = result is not None and result.result.success
-    print("SUCCESS" if ok else "FAILED", flush=True)
-    
-    node.destroy_node()
-    # 关键：完整 shutdown，不留给下次调用
-    rclpy.shutdown()
-    # 重置上下文，允许下次 rclpy.init()
-    import gc
-    gc.collect()
-    return ok
+    if result and result.result.success:
+        print("SUCCESS", flush=True)
+        node.destroy_node()
+        return 0
+    else:
+        print("FAILED", flush=True)
+        node.destroy_node()
+        return 1
 
 if __name__ == "__main__":
-    text = sys.argv[1] if len(sys.argv) > 1 else "reminder"
-    speak(text)
+    sys.exit(main())
