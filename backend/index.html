@@ -1,0 +1,142 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>叮叮提醒</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#f0f2f5;min-height:100vh}
+.header{background:#4f46e5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:18px}
+.card{background:#fff;margin:12px;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+input,select,button{padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px}
+button{cursor:pointer;background:#4f46e5;color:#fff;border:none;font-weight:500}
+button:hover{opacity:.9}
+.btn-sm{padding:4px 8px;font-size:12px;border-radius:4px}
+.btn-red{background:#ef4444}.btn-gray{background:#6b7280}.btn-green{background:#10b981}
+.form-row{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap}
+.form-row input{flex:1;min-width:120px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{border-bottom:1px solid #e5e7eb;padding:8px 6px;text-align:left}
+th{background:#f9fafb;font-weight:600}
+.status{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.st-pending{background:#fef3c7;color:#92400e}
+.st-sent{background:#dbeafe;color:#1e40af}
+.st-executing{background:#e0e7ff;color:#3730a3}
+.st-completed{background:#d1fae5;color:#065f46}
+.st-failed{background:#fee2e2;color:#991b1b}
+.st-cancelled{background:#f3f4f6;color:#6b7280}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>叮叮提醒</h1>
+  <div style="font-size:12px">
+    <span id="connStatus">未连接</span>
+    <span id="petName" style="margin-left:12px"></span>
+  </div>
+</div>
+
+<div class="card" id="loginCard">
+  <div style="font-weight:600;margin-bottom:8px">登录</div>
+  <div class="form-row">
+    <input id="phoneInput" placeholder="手机号" value="13900139000">
+    <button onclick="doLogin()">登录</button>
+  </div>
+</div>
+
+<div class="card" id="mainCard" style="display:none">
+  <div style="font-weight:600;margin-bottom:8px">发送提醒</div>
+  <div class="form-row">
+    <input id="titleInput" placeholder="标题（如：喝水）" style="flex:1">
+    <input id="timeInput" type="datetime-local" style="width:220px">
+  </div>
+  <div class="form-row">
+    <input id="contentInput" placeholder="内容（可选）">
+    <select id="repeatSelect">
+      <option value="none">不重复</option><option value="daily">每天</option>
+      <option value="weekly">每周</option><option value="monthly">每月</option>
+    </select>
+    <button onclick="doSend()">发送</button>
+  </div>
+</div>
+
+<div class="card" id="listCard" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span style="font-weight:600">提醒列表</span>
+    <button class="btn-sm btn-green" onclick="loadReminders()">刷新</button>
+  </div>
+  <div style="margin-bottom:8px">
+    <button class="btn-sm" onclick="filter('')">全部</button>
+    <button class="btn-sm btn-gray" onclick="filter('pending')">待发</button>
+    <button class="btn-sm btn-gray" onclick="filter('sent')">已发</button>
+    <button class="btn-sm btn-gray" onclick="filter('executing')">执行中</button>
+    <button class="btn-sm btn-gray" onclick="filter('completed')">已完成</button>
+    <button class="btn-sm btn-gray" onclick="filter('failed')">失败</button>
+  </div>
+  <table>
+    <thead><tr><th>标题</th><th>时间</th><th>重复</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody id="reminderBody"><tr><td colspan="5" style="text-align:center;color:#9ca3af">登录后自动加载</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+let f="";
+async function doLogin(){
+  const p=document.getElementById("phoneInput").value.trim();
+  if(!p)return alert("请输入手机号");
+  try{
+    const r=await fetch("/api/login?phone_num="+p+"&sms=888888");
+    const d=await r.json();
+    if(d.success){
+      document.getElementById("connStatus").textContent="已连接";
+      document.getElementById("petName").textContent="宠物: "+(d.pet_name||d.pets);
+      document.getElementById("loginCard").style.display="none";
+      document.getElementById("mainCard").style.display="";
+      document.getElementById("listCard").style.display="";
+      loadReminders();
+    }else{alert("登录失败: "+(d.msg||"unknown"))}
+  }catch(e){alert("失败: "+e)}
+}
+async function doSend(){
+  const t=document.getElementById("titleInput").value.trim();
+  const tm=document.getElementById("timeInput").value;
+  const c=document.getElementById("contentInput").value.trim();
+  const rp=document.getElementById("repeatSelect").value;
+  if(!t||!tm)return alert("标题和时间必填");
+  try{
+    const r=await fetch("/api/reminders",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({title:t,content:c||t,reminder_time:tm,repeat_type:rp})});
+    const d=await r.json();
+    if(d.success){alert("已发送!");document.getElementById("titleInput").value="";document.getElementById("contentInput").value="";loadReminders()}
+    else{alert("失败: "+(d.msg||JSON.stringify(d)))}
+  }catch(e){alert("失败: "+e)}
+}
+async function loadReminders(){
+  try{
+    const q=f?"status="+f:"";
+    const r=await fetch("/api/reminders?"+q);
+    const d=await r.json();
+    const rows=d.data?.rows||d.rows||[];
+    const tb=document.getElementById("reminderBody");
+    if(!rows.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#9ca3af">暂无提醒</td></tr>';return}
+    tb.innerHTML=rows.map(r=>`
+      <tr>
+        <td><strong>${e(r.title)}</strong><br><small style="color:#9ca3af">${e(r.content||"").slice(0,20)}</small></td>
+        <td style="white-space:nowrap">${ft(r.reminderTime)}</td>
+        <td>${r.repeatType==="none"?"-":r.repeatType}</td>
+        <td><span class="status st-${r.status}">${sl(r.status)}</span></td>
+        <td><button class="btn-sm btn-red" onclick="del(${r.id})">删</button></td>
+      </tr>`).join("");
+  }catch(e){console.error(e)}
+}
+function filter(s){f=s;loadReminders()}
+function e(s){return(s||"").replace(/</g,"&lt;")}
+function ft(t){return t?t.replace("T"," ").slice(0,16):""}
+function sl(s){const m={pending:"待发送",sent:"已发送",executing:"执行中",completed:"已完成",failed:"失败",cancelled:"已取消"};return m[s]||s||"?"}
+async function del(id){if(!confirm("确认删除?"))return;try{await fetch("/api/reminders/"+id,{method:"DELETE"});loadReminders()}catch(e){}}
+</script>
+</body>
+</html>
