@@ -33,7 +33,7 @@ class ReminderWSDaemon(Node):
 
         self.declare_parameter("server_host", "47.118.26.156")
         self.declare_parameter("server_port", 8000)
-        self.declare_parameter("serial_number", "6976f96f-bc80-56e3-9b27-13d12cdde9d1")
+        self.declare_parameter("serial_number", "6976f96f-bc80-56e3-9b27-13d12cdde9d3")
         self.declare_parameter("heartbeat_interval", 30.0)
 
         self._host = self.get_parameter("server_host").value

@@ -14,7 +14,7 @@ def generate_launch_description():
             parameters=[{
                 "server_host": "47.118.26.156",
                 "server_port": 8000,
-                "serial_number": "6976f96f-bc80-56e3-9b27-13d12cdde9d1",
+                "serial_number": "6976f96f-bc80-56e3-9b27-13d12cdde9d3",
                 "heartbeat_interval": 30.0,
             }],
         ),
