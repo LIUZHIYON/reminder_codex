@@ -153,16 +153,34 @@ class RescheduleRepeating(ActionNode):
 
 
 class PublishStatus(ActionNode):
-    """发布提醒结果到 /robot/command_response"""
-    def __init__(self, name="PublishStatus"): super().__init__(name); self._pub=None
+    """发布提醒结果到 /robot/command_response 并清理"""
+    def __init__(self, name="PublishStatus"): super().__init__(name); self._pub=None; self._ok=True
     def set_publisher(self, pub): self._pub=pub
     def execute(self) -> NodeStatus:
         if not self._pub: return NodeStatus.SUCCESS
+        rid = self.get_input("reminder_id", self.get_input("command_id", ""))
+        if not rid:
+            r = self.get_input("current_reminder", {})
+            rid = r.get("command_id", "")
+        # Mark as completed/failed in pending_reminders
+        rems = self.get_input("pending_reminders", [])
+        for rm in rems:
+            if rm.get("command_id") == rid:
+                rm["status"] = "completed" if self._ok else "failed"
+                rm["completed_at"] = datetime.now().isoformat()
+                break
+        self.set_output("reminder_status", "completed" if self._ok else "failed")
+        if self._ok:
+            c = self.get_input("completed_count", 0) + 1
+            self.set_output("completed_count", c)
+        else:
+            f = self.get_input("failed_count", 0) + 1
+            self.set_output("failed_count", f)
         from std_msgs.msg import String
         msg=String()
-        msg.data=json.dumps({"type":"command_response","command_id":self.get_input("reminder_id",""),
-                             "command":"reminder","status":"success" if self.get_input("reminder_status","")=="completed" else "failed",
-                             "result":{"played":True}},ensure_ascii=False)
+        msg.data=json.dumps({"type":"command_response","command_id":rid,
+                             "command":"reminder","status":"success" if self._ok else "failed",
+                             "result":{"played":self._ok}},ensure_ascii=False)
         self._pub.publish(msg)
         self.status = NodeStatus.SUCCESS
         return self.status
