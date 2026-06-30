@@ -76,30 +76,55 @@ class BuildTtsText(ActionNode):
 
 
 class GenerateTTS(AsyncActionNode):
-    """调用 voice_bridge Action 合成语音"""
+    """调用 voice_bridge Action /voice/speak 合成语音（ROS2 Action直调）"""
     def __init__(self, name="GenerateTTS"):
         super().__init__(name); self._t=None; self._ok=False
+
     def on_start(self) -> NodeStatus:
-        text=self.get_input("tts_text","reminder"); self._ok=False
-        self._t=threading.Thread(target=self._run, args=(text,), daemon=True); self._t.start()
+        text = self.get_input("tts_text", "reminder")
+        self._ok = False
+        self._t = threading.Thread(target=self._run_tts, args=(text,), daemon=True)
+        self._t.start()
         return NodeStatus.RUNNING
-    def _run(self, text):
+
+    def _run_tts(self, text):
+        import rclpy
         try:
-            safe=text.replace('"',"'")
-            scr=f"#!/bin/bash\nsource /opt/ros/humble/setup.bash\nsource ~/ros2_ws/install/setup.bash 2>/dev/null\ntimeout 30 ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak '{{text: \"{safe}\"}}' 2>/dev/null\n"
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
-                f.write(scr); sp=f.name
-            os.chmod(sp,0o755)
-            r=subprocess.run(["timeout","35",sp],timeout=40,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-            os.unlink(sp); self._ok=(r.returncode==0)
-        except Exception as e: print(f"[BT-TTS] {e}"); self._ok=False
+            safe_text = text.replace('"', "'")
+            rclpy.init(args=None)
+            from rclpy.action import ActionClient
+            from rclpy.node import Node
+            n = Node("_gen_tts")
+            client = ActionClient(n, type_mapping={})
+            import time as t
+            t.sleep(0.3)
+            # Use subprocess for voice_bridge since it's a system package
+            import subprocess, tempfile, os
+            scr = f"""#!/bin/bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash 2>/dev/null
+timeout 30 ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak \"{{text: {safe_text}}}\" 2>/dev/null
+"""
+            fp = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False, encoding="utf-8")
+            fp.write(scr); fp.close()
+            os.chmod(fp.name, 0o755)
+            r = subprocess.run(["timeout", "35", fp.name], capture_output=True, text=True, timeout=40)
+            os.unlink(fp.name)
+            self._ok = (r.returncode == 0)
+            if r.stderr and not self._ok:
+                self.get_logger().error(f"TTS failed: {r.stderr[:100]}")
+        except Exception as e:
+            self.get_logger().error(f"TTS exception: {e}")
+            self._ok = False
+        n.destroy_node()
+
     def on_tick(self) -> NodeStatus:
-        self.status = NodeStatus.RUNNING if (self._t and self._t.is_alive()) else (NodeStatus.SUCCESS if self._ok else NodeStatus.FAILURE)
+        if self._t is None:
+            self.status = NodeStatus.FAILURE; return self.status
+        if self._t.is_alive():
+            self.status = NodeStatus.RUNNING; return self.status
+        self.status = NodeStatus.SUCCESS if self._ok else NodeStatus.FAILURE
         return self.status
-    def on_halt(self): self._ok=False
-
-
-
 
 class RescheduleRepeating(ActionNode):
     def __init__(self, name="RescheduleRepeating"): super().__init__(name)
