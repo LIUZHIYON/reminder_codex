@@ -116,7 +116,7 @@ class GenerateTTS(AsyncActionNode):
             log.write("[{}] Content: {}\n".format(datetime.datetime.now(), scr))
             log.flush()
             r = subprocess.run(["timeout", "35", fp.name], capture_output=True, text=True, timeout=40)
-            self._ok = (r.returncode == 0)
+            self._ok = (r.returncode == 0 or "Goal accepted" in r.stdout)
             log.write("[{}] RC={} stdout={}\n".format(datetime.datetime.now(), r.returncode, r.stdout[:150]))
             log.flush()
         except Exception as e:
