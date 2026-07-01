@@ -82,63 +82,27 @@ class BuildTtsText(ActionNode):
 
 
 class GenerateTTS(AsyncActionNode):
-    """调用 voice_bridge Action /voice/speak 合成语音（ROS2 Action直调）"""
+    """调用 voice_bridge Action /voice/speak 合成语音"""
     def __init__(self, name="GenerateTTS"):
         super().__init__(name); self._t=None; self._ok=False
-
     def on_start(self) -> NodeStatus:
-        text = self.get_input("tts_text", "reminder")
-        self._ok = False
-        with open("/tmp/tts_debug.log", "a") as f:
-            f.write("[on_start] tts_text={}\n".format(text))
-        self._t = threading.Thread(target=self._run_tts, args=(text,), daemon=True)
-        self._t.start()
+        text=self.get_input("tts_text","reminder"); self._ok=False
+        self._t=threading.Thread(target=self._run, args=(text,), daemon=True); self._t.start()
         return NodeStatus.RUNNING
-
-    def _run_tts(self, text):
-        import subprocess, tempfile, os, datetime, traceback
-        log = open("/tmp/tts_debug.log", "a")
-        log.write("\n[{}] _run_tts START: {}\n".format(datetime.datetime.now(), text))
-        log.flush()
-        fp = None
+    def _run(self, text):
         try:
-            safe_text = text.replace(chr(34), chr(39))
-            lines = ["#!/bin/bash", "source /opt/ros/humble/setup.bash"]
-            cmd = 'ros2 service call /audio/set_volume robot_audio_node/srv/SetVolume \'{volume: 80}\' 2>/dev/null; ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak'
-            yaml_val = chr(34) + "{text: " + chr(39) + safe_text + chr(39) + "}" + chr(34)
-            lines.append("{} {}".format(cmd, yaml_val))
-            scr = "\n".join(lines)
-            fp = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False, encoding="utf-8")
-            fp.write(scr)
-            fp.close()
-            os.chmod(fp.name, 0o755)
-            log.write("[{}] Script: {}\n".format(datetime.datetime.now(), fp.name))
-            log.write("[{}] Content: {}\n".format(datetime.datetime.now(), scr))
-            log.flush()
-            r = subprocess.run(["bash", fp.name], capture_output=True, text=True, timeout=45)
-            self._ok = (r.returncode == 0 or "Goal accepted" in r.stdout)
-            log.write("[{}] RC={} stdout={}\n".format(datetime.datetime.now(), r.returncode, r.stdout[:150]))
-            log.flush()
-        except Exception as e:
-            traceback.print_exc(file=log)
-            log.write("[{}] EXCEPTION: {}\n".format(datetime.datetime.now(), e))
-            log.flush()
-            self._ok = False
-        finally:
-            if fp is not None:
-                try: os.unlink(fp.name)
-                except: pass
-            log.write("[{}] _run_tts END\n".format(datetime.datetime.now()))
-            log.flush()
-            log.close()
-
+            safe=text.replace('"',"'")
+            scr=f"#!/bin/bash\nsource /opt/ros/humble/setup.bash\nsource ~/ros2_ws/install/setup.bash 2>/dev/null\ntimeout 30 ros2 action send_goal /voice/speak robot_voice_bridge/action/Speak '{{text: \"{safe}\"}}' 2>/dev/null\n"
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
+                f.write(scr); sp=f.name
+            os.chmod(sp,0o755)
+            r=subprocess.run(["timeout","35",sp],timeout=40,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            os.unlink(sp); self._ok=(r.returncode==0)
+        except Exception as e: print(f"[BT-TTS] {e}"); self._ok=False
     def on_tick(self) -> NodeStatus:
-        if self._t is None:
-            self.status = NodeStatus.FAILURE; return self.status
-        if self._t.is_alive():
-            self.status = NodeStatus.RUNNING; return self.status
-        self.status = NodeStatus.SUCCESS if self._ok else NodeStatus.FAILURE
+        self.status = NodeStatus.RUNNING if (self._t and self._t.is_alive()) else (NodeStatus.SUCCESS if self._ok else NodeStatus.FAILURE)
         return self.status
+    def on_halt(self): self._ok=False
 
 class RescheduleRepeating(ActionNode):
     def __init__(self, name="RescheduleRepeating"): super().__init__(name)
