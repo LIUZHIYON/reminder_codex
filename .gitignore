@@ -45,3 +45,5 @@ backend/server_err.log
 # Temp investigation files
 _check_*
 _investigate_*
+
+板子文件备份/
