@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>叮叮提醒 v3.0</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#f0f2f5;min-height:100vh}
+.header{background:#4f46e5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:18px}
+.card{background:#fff;margin:12px;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+input,select,button{padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px}
+button{cursor:pointer;background:#4f46e5;color:#fff;border:none;font-weight:500}
+button:hover{opacity:.9}.btn-sm{padding:4px 8px;font-size:12px}.btn-red{background:#ef4444}
+.form-row{display:flex;gap:8px;margin:8px 0}
+.form-row input{flex:1}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{border-bottom:1px solid #e5e7eb;padding:8px 6px;text-align:left}
+th{background:#f9fafb;font-weight:600}
+.status{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.st-pending{background:#fef3c7;color:#92400e}.st-sent{background:#dbeafe;color:#1e40af}
+.st-executing{background:#e0e7ff;color:#3730a3}.st-completed{background:#d1fae5;color:#065f46}
+.st-failed{background:#fee2e2;color:#991b1b}
+</style>
+</head>
+<body>
+<div class="header"><h1>叮叮提醒 v3.0</h1><span id="info" style="font-size:12px">未连接</span></div>
+<div class="card" id="loginCard">
+  <div class="form-row">
+    <input id="phone" placeholder="手机号" value="13900139000">
+    <button onclick="doLogin()">登录</button>
+  </div>
+</div>
+<div class="card" id="sendCard" style="display:none">
+  <div style="font-weight:600;margin-bottom:8px">发送提醒</div>
+  <div class="form-row">
+    <input id="title" placeholder="标题"><input id="time" type="datetime-local" style="width:220px">
+  </div>
+  <div class="form-row">
+    <input id="content" placeholder="内容（可选）">
+    <select id="repeat"><option value="none">不重复</option><option value="daily">每天</option>
+    <option value="weekly">每周</option><option value="monthly">每月</option></select>
+    <button onclick="doSend()">发送</button>
+  </div>
+</div>
+<div class="card" id="listCard" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span style="font-weight:600">提醒列表</span>
+    <button class="btn-sm" onclick="loadList()">刷新</button>
+  </div>
+  <table><thead><tr><th>标题</th><th>时间</th><th>重复</th><th>状态</th><th>操作</th></tr></thead>
+  <tbody id="tbody"><tr><td colspan="5" style="text-align:center;color:#9ca3af">点击刷新加载</td></tr></tbody></table>
+</div>
+<script>
+async function doLogin(){
+  const p=document.getElementById("phone").value.trim();
+  if(!p)return alert("请输入手机号");
+  try{const r=await fetch("/api/login?phone_num="+p);const d=await r.json();
+    if(d.success){document.getElementById("info").textContent=d.phone;
+      document.getElementById("loginCard").style.display="none";
+      document.getElementById("sendCard").style.display="";
+      document.getElementById("listCard").style.display="";
+      loadList()}else{alert("失败: "+JSON.stringify(d))}
+  }catch(e){alert("失败: "+e)}
+}
+async function doSend(){
+  const t=document.getElementById("title").value.trim();
+  const tm=document.getElementById("time").value;
+  const c=document.getElementById("content").value.trim();
+  const rp=document.getElementById("repeat").value;
+  if(!t||!tm)return alert("标题和时间必填");
+  try{const r=await fetch("/api/reminders",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({title:t,content:c||t,reminder_time:tm,repeat_type:rp})});
+    const d=await r.json();
+    if(d.success){alert("已发送!");document.getElementById("title").value="";loadList()}
+    else{alert("失败")}
+  }catch(e){alert("失败: "+e)}
+}
+async function loadList(){
+  try{const r=await fetch("/api/reminders");const d=await r.json();
+    const rows=d.data?.rows||d.rows||[];
+    const tb=document.getElementById("tbody");
+    if(!rows.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#9ca3af">暂无</td></tr>';return}
+    tb.innerHTML=rows.map(r=>`<tr>
+      <td><strong>${e(r.title)}</strong></td>
+      <td>${ft(r.reminderTime)}</td><td>${r.repeatType==="none"?"-":r.repeatType}</td>
+      <td><span class="status st-${r.status}">${sl(r.status)}</span></td>
+      <td><button class="btn-sm btn-red" onclick="del(${r.id})">删</button></td></tr>`).join("")
+  }catch(e){}
+}
+function e(s){return(s||"").replace(/</g,"&lt;")}
+function ft(t){return t?t.replace("T"," ").slice(0,16):""}
+function sl(s){const m={pending:"待发送",sent:"已发送",executing:"执行中",completed:"已完成",failed:"失败"};return m[s]||s||"?"}
+async function del(id){if(!confirm("确认删除?"))return;try{await fetch("/api/reminders/"+id,{method:"DELETE"});loadList()}catch(e){}}
+</script>
+</body></html>
