@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>提醒系统全链路时序图</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; font-family: 'Segoe UI', Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 10px; }
+.controls { margin: 10px 0; display: flex; gap: 10px; align-items: center; }
+.controls button { padding: 8px 20px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; background: #3498db; color: #fff; font-weight: bold; }
+.controls button:hover { opacity: 0.85; }
+.controls span { color: #ccc; font-size: 13px; }
+#wrapper { overflow: auto; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.3); max-width: 98vw; max-height: 92vh; background: #f8f9fa; }
+svg { display: block; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <button onclick="zoomIn()">➕ 放大</button>
+  <button onclick="zoomOut()">➖ 缩小</button>
+  <button onclick="resetZoom()">🔄 重置</button>
+  <span id="zoomLevel">100%</span>
+</div>
+<div id="wrapper">
+<svg id="mainSvg" width="1600" height="1200" viewBox="0 0 1600 1200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- 背景 -->
+  <rect x="0" y="0" width="1600" height="1200" fill="#f8f9fa"/>
+
+  <!-- 标题 -->
+  <rect x="0" y="0" width="1600" height="70" fill="#2c3e50"/>
+  <text x="800" y="45" text-anchor="middle" fill="#fff" font-size="28" font-weight="bold">提醒系统全链路时序图 (v2.7)</text>
+
+  <!-- ==================== 第一行: 用户 → 云端 ==================== -->
+
+  <!-- 用户网页 -->
+  <rect x="80" y="110" width="200" height="60" rx="30" fill="#3498db"/>
+  <text x="180" y="140" text-anchor="middle" fill="#fff" font-size="18" font-weight="bold">🌐 用户网页</text>
+  <text x="180" y="160" text-anchor="middle" fill="#d6eaf8" font-size="13">http://192.168.1.190:8001</text>
+
+  <line x1="280" y1="140" x2="430" y2="140" stroke="#3498db" stroke-width="3" marker-end="url(#arrowBlue)"/>
+  <text x="355" y="130" text-anchor="middle" fill="#3498db" font-size="13" font-weight="bold">POST /api/reminders</text>
+
+  <!-- 云端 -->
+  <rect x="440" y="110" width="200" height="60" rx="10" fill="#e74c3c"/>
+  <text x="540" y="138" text-anchor="middle" fill="#fff" font-size="16" font-weight="bold">☁️ 云端服务器</text>
+  <text x="540" y="158" text-anchor="middle" fill="#f9c" font-size="12">47.118.26.156:8000</text>
+
+  <!-- 分叉 -->
+  <line x1="540" y1="170" x2="540" y2="210" stroke="#e74c3c" stroke-width="3"/>
+  <line x1="180" y1="210" x2="900" y2="210" stroke="#e74c3c" stroke-width="3"/>
+  <line x1="180" y1="210" x2="180" y2="250" stroke="#e74c3c" stroke-width="3" marker-end="url(#arrowRed)"/>
+  <line x1="900" y1="210" x2="900" y2="250" stroke="#e74c3c" stroke-width="3" marker-end="url(#arrowRed)"/>
+
+  <text x="540" y="203" text-anchor="middle" fill="#e74c3c" font-size="14" font-weight="bold">双路分发</text>
+
+  <!-- ==================== 同事路径（左） ==================== -->
+  <rect x="80" y="260" width="220" height="55" rx="10" fill="#e67e22"/>
+  <text x="190" y="285" text-anchor="middle" fill="#fff" font-size="16" font-weight="bold">🔄 relay_node（同事）</text>
+  <text x="190" y="305" text-anchor="middle" fill="#fde" font-size="12">→ /aipet/command_delivery</text>
+
+  <line x1="190" y1="315" x2="190" y2="355" stroke="#e67e22" stroke-width="3" marker-end="url(#arrowOrange)"/>
+
+  <rect x="50" y="365" width="280" height="55" rx="10" fill="#d35400"/>
+  <text x="190" y="390" text-anchor="middle" fill="#fff" font-size="16" font-weight="bold">🔊 relay_voice_bridge（同事）</text>
+  <text x="190" y="410" text-anchor="middle" fill="#fde" font-size="12">ros2 action /voice/speak</text>
+
+  <line x1="190" y1="420" x2="190" y2="490" stroke="#d35400" stroke-width="2" stroke-dasharray="8,4" marker-end="url(#arrowOrange)"/>
+  <text x="220" y="460" fill="#d35400" font-size="13" font-weight="bold">→ /voice/speak action</text>
+
+  <!-- ==================== 你的路径（右） ==================== -->
+
+  <!-- reminder_ws_daemon -->
+  <rect x="750" y="260" width="280" height="55" rx="10" fill="#27ae60"/>
+  <text x="890" y="285" text-anchor="middle" fill="#fff" font-size="16" font-weight="bold">📡 reminder_ws_daemon（你）</text>
+  <text x="890" y="305" text-anchor="middle" fill="#dfd" font-size="12">WebSocket 连接云端</text>
+
+  <line x1="890" y1="315" x2="890" y2="350" stroke="#27ae60" stroke-width="3" marker-end="url(#arrowGreen)"/>
+
+  <rect x="750" y="355" width="280" height="55" rx="10" fill="#2ecc71"/>
+  <text x="890" y="378" text-anchor="middle" fill="#fff" font-size="14" font-weight="bold">📨 /reminder/ws/delivery</text>
+  <text x="890" y="398" text-anchor="middle" fill="#efe" font-size="12">通知 aipet_reminder_node</text>
+
+  <line x1="890" y1="410" x2="890" y2="445" stroke="#2ecc71" stroke-width="3" marker-end="url(#arrowGreen)"/>
+
+  <!-- aipet_reminder_node -->
+  <rect x="750" y="450" width="280" height="55" rx="10" fill="#1abc9c"/>
+  <text x="890" y="473" text-anchor="middle" fill="#fff" font-size="16" font-weight="bold">📨 aipet_reminder_node（你）</text>
+  <text x="890" y="493" text-anchor="middle" fill="#dfd" font-size="12">转发 → /robot/command</text>
+
+  <line x1="890" y1="505" x2="890" y2="540" stroke="#1abc9c" stroke-width="3" marker-end="url(#arrowTeal)"/>
+
+  <!-- ==================== 行为树（中间） ==================== -->
+  <rect x="140" y="550" width="1400" height="170" rx="12" fill="#16a085" opacity="0.95"/>
+  <text x="840" y="580" text-anchor="middle" fill="#fff" font-size="20" font-weight="bold">🌳 reminder_bt_driver 行为树（你的）</text>
+
+  <!-- 步骤条 -->
+  <rect x="170" y="600" width="180" height="36" rx="18" fill="#fff" opacity="0.9"/>
+  <text x="260" y="624" text-anchor="middle" fill="#16a085" font-size="14" font-weight="bold">① CheckNewReminder</text>
+
+  <line x1="350" y1="618" x2="410" y2="618" stroke="#fff" stroke-width="2"/>
+  <polygon points="410,613 420,618 410,623" fill="#fff"/>
+
+  <rect x="425" y="600" width="180" height="36" rx="18" fill="#fff" opacity="0.9"/>
+  <text x="515" y="624" text-anchor="middle" fill="#16a085" font-size="14" font-weight="bold">② CheckTime</text>
+
+  <line x1="605" y1="618" x2="665" y2="618" stroke="#fff" stroke-width="2"/>
+  <polygon points="665,613 675,618 665,623" fill="#fff"/>
+
+  <rect x="680" y="600" width="180" height="36" rx="18" fill="#fff" opacity="0.9"/>
+  <text x="770" y="624" text-anchor="middle" fill="#16a085" font-size="14" font-weight="bold">③ BuildTtsText</text>
+
+  <line x1="860" y1="618" x2="920" y2="618" stroke="#fff" stroke-width="2"/>
+  <polygon points="920,613 930,618 920,623" fill="#fff"/>
+
+  <!-- ★ GenerateTTS 高亮 -->
+  <rect x="935" y="592" width="280" height="52" rx="26" fill="#f1c40f" stroke="#e67e22" stroke-width="2"/>
+  <text x="1075" y="615" text-anchor="middle" fill="#c0392b" font-size="16" font-weight="bold">★ GenerateTTS</text>
+  <text x="1075" y="635" text-anchor="middle" fill="#7f8c8d" font-size="11">subprocess → ros2 action /voice/speak</text>
+
+  <line x1="1215" y1="618" x2="1275" y2="618" stroke="#fff" stroke-width="2"/>
+  <polygon points="1275,613 1285,618 1275,623" fill="#fff"/>
+
+  <rect x="1290" y="600" width="180" height="36" rx="18" fill="#fff" opacity="0.9"/>
+  <text x="1380" y="624" text-anchor="middle" fill="#16a085" font-size="14" font-weight="bold">④ PublishStatus</text>
+
+  <!-- 树中的箭头 -->
+  <line x1="260" y1="636" x2="260" y2="665" stroke="#fff" stroke-width="2" marker-end="url(#arrowWhite)"/>
+  <text x="320" y="672" fill="#fff" font-size="12">pending提醒 → 时间判断 → 合成文本 → 触发语音 → 标记完成</text>
+
+  <!-- ==================== 语音处理链 ==================== -->
+
+  <!-- BT → VoiceBridge -->
+  <line x1="840" y1="720" x2="840" y2="775" stroke="#16a085" stroke-width="4" marker-end="url(#arrowTeal)"/>
+  <text x="870" y="755" fill="#16a085" font-size="15" font-weight="bold">/voice/speak action</text>
+
+  <!-- voice_bridge -->
+  <rect x="570" y="785" width="540" height="65" rx="12" fill="#8e44ad"/>
+  <text x="840" y="812" text-anchor="middle" fill="#fff" font-size="18" font-weight="bold">🔊 voice_bridge</text>
+  <text x="840" y="835" text-anchor="middle" fill="#e0d" font-size="13">Action Server /voice/speak → 发布 /tts/text</text>
+
+  <line x1="840" y1="850" x2="840" y2="890" stroke="#8e44ad" stroke-width="3" marker-end="url(#arrowPurple)"/>
+  <text x="870" y="877" fill="#8e44ad" font-size="14" font-weight="bold">/tts/text</text>
+
+  <!-- tts_node -->
+  <rect x="570" y="900" width="540" height="65" rx="12" fill="#9b59b6"/>
+  <text x="840" y="925" text-anchor="middle" fill="#fff" font-size="18" font-weight="bold">🎤 tts_node_patched</text>
+  <text x="840" y="948" text-anchor="middle" fill="#e0d" font-size="13">豆包 TTS 合成 → 发布 /tts/audio</text>
+
+  <line x1="840" y1="965" x2="840" y2="1005" stroke="#9b59b6" stroke-width="3" marker-end="url(#arrowPurple)"/>
+  <text x="870" y="992" fill="#9b59b6" font-size="14" font-weight="bold">/tts/audio</text>
+
+  <!-- robot_audio_node -->
+  <rect x="570" y="1015" width="540" height="65" rx="12" fill="#2980b9"/>
+  <text x="840" y="1040" text-anchor="middle" fill="#fff" font-size="18" font-weight="bold">🔈 robot_audio_node</text>
+  <text x="840" y="1063" text-anchor="middle" fill="#bdf" font-size="13">ALSA 写入声卡</text>
+
+  <line x1="840" y1="1080" x2="840" y2="1115" stroke="#2980b9" stroke-width="3" marker-end="url(#arrowBlue)"/>
+
+  <!-- 喇叭 -->
+  <rect x="740" y="1120" width="200" height="55" rx="27" fill="#c0392b" stroke="#e74c3c" stroke-width="3"/>
+  <text x="840" y="1145" text-anchor="middle" fill="#fff" font-size="18" font-weight="bold">📢 喇叭</text>
+  <text x="840" y="1165" text-anchor="middle" fill="#fda" font-size="14">❌ spk switch off（听不到）</text>
+
+  <!-- ==================== 右侧信息面板 ==================== -->
+
+  <!-- 你的节点 -->
+  <rect x="1150" y="260" width="400" height="250" rx="12" fill="#e8f8f5" stroke="#27ae60" stroke-width="2"/>
+  <text x="1350" y="295" text-anchor="middle" fill="#27ae60" font-size="20" font-weight="bold">✅ 你的 3 个节点</text>
+  <line x1="1180" y1="310" x2="1520" y2="310" stroke="#bdc3c7" stroke-width="1"/>
+  <text x="1180" y="340" fill="#2c3e50" font-size="15" font-weight="bold">1. reminder_ws_daemon</text>
+  <text x="1180" y="360" fill="#7f8c8d" font-size="13">WebSocket ↔ 云端</text>
+  <text x="1180" y="390" fill="#2c3e50" font-size="15" font-weight="bold">2. aipet_reminder_node</text>
+  <text x="1180" y="410" fill="#7f8c8d" font-size="13">ws_daemon → BT 驱动 转发</text>
+  <text x="1180" y="440" fill="#2c3e50" font-size="15" font-weight="bold">3. reminder_bt_driver</text>
+  <text x="1180" y="460" fill="#7f8c8d" font-size="13">行为树处理提醒</text>
+
+  <!-- 关键文件 -->
+  <rect x="1150" y="530" width="400" height="200" rx="12" fill="#fef9e7" stroke="#f39c12" stroke-width="2"/>
+  <text x="1350" y="565" text-anchor="middle" fill="#f39c12" font-size="20" font-weight="bold">📁 关键文件</text>
+  <line x1="1180" y1="580" x2="1520" y2="580" stroke="#bdc3c7" stroke-width="1"/>
+  <text x="1180" y="610" fill="#2c3e50" font-size="13">reminder_bt_nodes.py</text>
+  <text x="1180" y="630" fill="#7f8c8d" font-size="11">/home/cat/ros2_ws/src/robot_reminder_bt/</text>
+  <text x="1180" y="660" fill="#2c3e50" font-size="13">reminder_bt_driver.py</text>
+  <text x="1180" y="680" fill="#7f8c8d" font-size="11">（同上目录）</text>
+  <text x="1180" y="710" fill="#2c3e50" font-size="13">reminder_ws_daemon.py</text>
+  <text x="1180" y="730" fill="#7f8c8d" font-size="11">（robot_reminder_bt/子目录）</text>
+
+  <!-- 日志 -->
+  <rect x="1150" y="750" width="400" height="180" rx="12" fill="#eaf2f8" stroke="#3498db" stroke-width="2"/>
+  <text x="1350" y="785" text-anchor="middle" fill="#3498db" font-size="20" font-weight="bold">📋 日志文件</text>
+  <line x1="1180" y1="800" x2="1520" y2="800" stroke="#bdc3c7" stroke-width="1"/>
+  <text x="1180" y="825" fill="#2c3e50" font-size="13">BT 驱动: /tmp/bt_driver.log</text>
+  <text x="1180" y="850" fill="#2c3e50" font-size="13">ws_daemon: /tmp/reminder_ws_daemon.log</text>
+  <text x="1180" y="875" fill="#2c3e50" font-size="13">语音: /tmp/voice_logs/*.log</text>
+  <text x="1180" y="900" fill="#2c3e50" font-size="13">提醒数据: /data/reminders/pending_reminders.json</text>
+
+  <!-- 图例 -->
+  <rect x="1150" y="950" width="400" height="140" rx="12" fill="#f5eef8" stroke="#9b59b6" stroke-width="2"/>
+  <text x="1350" y="985" text-anchor="middle" fill="#9b59b6" font-size="20" font-weight="bold">🎨 图例</text>
+  <rect x="1180" y="1005" width="24" height="16" rx="3" fill="#27ae60"/>
+  <text x="1215" y="1018" fill="#2c3e50" font-size="13">你的节点</text>
+  <rect x="1380" y="1005" width="24" height="16" rx="3" fill="#e67e22"/>
+  <text x="1415" y="1018" fill="#2c3e50" font-size="13">同事节点</text>
+  <rect x="1180" y="1030" width="24" height="16" rx="3" fill="#f1c40f"/>
+  <text x="1215" y="1043" fill="#2c3e50" font-size="13">GenerateTTS 核心</text>
+  <rect x="1380" y="1030" width="24" height="16" rx="3" fill="#8e44ad"/>
+  <text x="1415" y="1043" fill="#2c3e50" font-size="13">语音服务</text>
+  <rect x="1180" y="1055" width="24" height="16" rx="3" fill="#c0392b"/>
+  <text x="1215" y="1068" fill="#2c3e50" font-size="13">问题点</text>
+  <line x1="1380" y1="1062" x2="1404" y2="1062" stroke="#95a5a6" stroke-width="3" stroke-dasharray="6,4"/>
+  <text x="1415" y="1068" fill="#2c3e50" font-size="13">也可调用语音</text>
+
+  <!-- 箭头定义 -->
+  <defs>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#3498db"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#e74c3c"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#27ae60"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#1abc9c"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#8e44ad"/>
+    </marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#d35400"/>
+    </marker>
+    <marker id="arrowWhite" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#fff"/>
+    </marker>
+  </defs>
+</svg>
+</div>
+
+<script>
+let scale = 1;
+const svg = document.getElementById('mainSvg');
+const wrapper = document.getElementById('wrapper');
+const zoomLabel = document.getElementById('zoomLevel');
+
+function zoomIn() { scale = Math.min(scale + 0.25, 3); applyZoom(); }
+function zoomOut() { scale = Math.max(scale - 0.25, 0.25); applyZoom(); }
+function resetZoom() { scale = 1; applyZoom(); }
+function applyZoom() {
+  svg.style.transform = `scale(${scale})`;
+  svg.style.transformOrigin = 'top left';
+  zoomLabel.textContent = Math.round(scale * 100) + '%';
+}
+</script>
+</body>
+</html>
